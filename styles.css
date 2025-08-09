@@ -32,9 +32,7 @@ img{max-width:100%;display:block}
 .topbar .small{border:1px solid var(--border);background:#fff;border-radius:10px;padding:8px 10px;cursor:pointer}
 .who{color:var(--muted);font-size:.92rem}
 .burger-inline,
-#navToggle {
-  display: none;
-}
+#navToggle { display: inline-flex; }
 
 .dash-head{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 8px}
 .icon-btn{border:1px solid var(--border);background:#fff;border-radius:10px;padding:8px;cursor:pointer}
@@ -110,3 +108,55 @@ main .grid{display:grid;gap:12px;padding:12px}
   #navToggle{display:none}
   .users{grid-template-columns:1fr}
 }
+
+:root {
+  --panel: color-mix(in oklab, white 92%, transparent);
+  --panel-dark: rgba(22, 28, 34, 0.72);
+  --glass: 12px;
+  --ring: 0 0 0 3px color-mix(in oklab, var(--brand) 24%, transparent);
+}
+
+body {
+  background:
+    radial-gradient(1000px 600px at -20% -20%, rgba(14,165,165,.08), transparent),
+    radial-gradient(800px 500px at 120% 10%, rgba(255,105,180,.07), transparent),
+    linear-gradient(180deg, #f8fafc, #f3f6f8);
+}
+
+.app .card {
+  border-radius: 16px;
+  backdrop-filter: saturate(1.15) blur(6px);
+  -webkit-backdrop-filter: saturate(1.15) blur(6px);
+  border: 1px solid var(--border);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.app .card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(2, 6, 23, 0.08);
+}
+
+.topbar {
+  border-radius: 16px;
+  background: var(--panel);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+}
+
+input, select, textarea, .btn, .small, .menu-btn {
+  border-radius: 12px !important;
+}
+
+input:focus, select:focus, textarea:focus, button:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.icon-btn.plus {
+  border-radius: 50%;
+  width: 42px; height: 42px;
+  display: inline-grid; place-items: center;
+}
+
+.badge.warn { background: rgba(250, 204, 21, .18); color: #a16207; }
+.badge.danger { background: rgba(239, 68, 68, .18); color: #991b1b; }

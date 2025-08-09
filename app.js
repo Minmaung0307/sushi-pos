@@ -67,7 +67,7 @@ const auth = firebase.auth();
 const db   = firebase.firestore();
 
 // Anyone in this list is always an admin when they sign in
-const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com']; // add more emails if you want
+// const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com']; // add more emails if you want
 
 /* ===== Cloud (no realtime stream; pull/push only) ===== */
 const workspaceRef = () => db.collection('workspaces').doc(auth.currentUser.uid);
@@ -806,44 +806,64 @@ function afterRender(){
 }
 
 // Auth boot (fast UI, background sync)
+// Make sure this exists above:
+const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com']; // add yours
+let cloudUnsub = null; // reuse your existing var if you already have it
+
 auth.onAuthStateChanged(async (user) => {
   applyTheme();
-  if (user) {
-    try { await cloudLoadAll(); } catch {}
-    const users = load('users', [DEFAULT_ADMIN]);
-    const email = (user.email || '').toLowerCase();
 
-    // find or create local profile
-    let prof = users.find(u => (u.email || '').toLowerCase() === email);
-    if (!prof) {
-      // auto-create local profile for first sign-in
-      const role = SUPER_ADMINS.includes(email) ? 'admin' : 'user';
-      prof = {
-        name: role === 'admin' ? 'Admin' : 'User',
-        username: (email.split('@')[0] || 'user'),
-        email,
-        contact: '',
-        role,
-        password: '',
-        img: ''
-      };
-      users.push(prof);
-      save('users', users);
-    } else {
-      // if this email is a super admin but local role isn't, upgrade it
-      if (SUPER_ADMINS.includes(email) && prof.role !== 'admin') {
-        prof.role = 'admin';
-        save('users', users);
-      }
-    }
+  // Clean up any previous Firestore listener
+  if (cloudUnsub) { try { cloudUnsub(); } catch {} cloudUnsub = null; }
 
-    session = { ...prof };
-    save('session', session);
-    renderApp();
-    cloudSubscribe();
-  } else {
+  if (!user) {
+    // No auth → show login (or last local session if you want that behavior)
     session = load('session', null);
     if (session) { renderApp(); } else { renderLogin(); }
+    return;
+  }
+
+  // Logged in
+  const email = (user.email || '').toLowerCase();
+
+  // Try to pull cloud state, but don’t block the UI if it fails
+  try { await cloudLoadAll(); } catch (e) { console.warn('cloudLoadAll failed:', e); }
+
+  // Build/repair local profile
+  const users = load('users', [DEFAULT_ADMIN]);
+  let prof = users.find(u => (u.email || '').toLowerCase() === email);
+
+  const forcedRole = SUPER_ADMINS.includes(email) ? 'admin' : (prof?.role || 'user');
+
+  if (!prof) {
+    // First time this email signs in on this device → create a local profile record
+    prof = {
+      name: forcedRole === 'admin' ? 'Admin' : 'User',
+      username: email ? (email.split('@')[0] || 'user') : (user.uid.slice(0,8)),
+      email,
+      contact: '',
+      role: forcedRole,
+      password: '',
+      img: ''
+    };
+    users.push(prof);
+    save('users', users);
+  } else if (prof.role !== forcedRole) {
+    // Upgrade/downgrade role based on SUPER_ADMINS
+    prof.role = forcedRole;
+    save('users', users);
+  }
+
+  // Set session and paint UI immediately
+  session = { ...prof };
+  save('session', session);
+  renderApp();
+
+  // Start cloud live sync (ignore if Firestore rules/env not ready)
+  try {
+    cloudSubscribe(); // this should set cloudUnsub internally
+  } catch (e) {
+    console.warn('cloudSubscribe failed:', e);
   }
 });
 
