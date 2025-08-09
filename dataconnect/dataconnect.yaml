@@ -1,0 +1,12 @@
+specVersion: "v1"
+serviceId: "sushi-pos"
+location: "us-central1"
+schema:
+  source: "./schema"
+  datasource:
+    postgresql:
+      database: "fdcdb"
+      cloudSql:
+        instanceId: "sushi-pos-fdc"
+      # schemaValidation: "COMPATIBLE"
+connectorDirs: ["./connector"]
