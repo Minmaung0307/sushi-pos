@@ -1,16 +1,12 @@
 /* =========================
-   Sushi POS — App (Firebase, Modular SDK)
+   Sushi POS — compat build
    ========================= */
 
 /* ===== Utilities ===== */
 const q = s => document.querySelector(s);
 const qa = s => Array.from(document.querySelectorAll(s));
 
-/** Local save + trigger cloud push (if signed in) */
-function save(k, v) {
-  localStorage.setItem(k, JSON.stringify(v));
-  try { cloudMaybePush(); } catch(e) {}
-}
+function save(k, v) { localStorage.setItem(k, JSON.stringify(v)); try { cloudMaybePush(); } catch(e) {} }
 const load = (k, def) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } };
 
 function showNotif(msg) {
@@ -19,7 +15,7 @@ function showNotif(msg) {
   setTimeout(() => { n.style.opacity = 0; setTimeout(() => n.style.display = 'none', 260); }, 1600);
 }
 
-/* Image compression to avoid localStorage quota issues */
+/* Image compression */
 async function compressImage(file, maxW=1000, maxH=1000, quality=0.8){
   if(!file) return '';
   const img = await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=URL.createObjectURL(file); });
@@ -32,8 +28,6 @@ async function compressImage(file, maxW=1000, maxH=1000, quality=0.8){
   URL.revokeObjectURL(img.src);
   return dataUrl;
 }
-
-/* Phone format */
 const formatPhone=v=>{const d=(v||'').toString().replace(/\D/g,'').slice(0,10); if(d.length<4) return d; if(d.length<7) return `(${d.slice(0,3)}) ${d.slice(3)}`; return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;};
 
 /* ===== Theme ===== */
@@ -41,35 +35,23 @@ function applyTheme(){const t=load('theme',{color:'light',font:'medium'}); docum
 
 /* ===== Defaults / State ===== */
 const DEFAULT_ADMIN={username:'admin',email:'admin@sushi.com',password:'admin123',role:'admin',name:'Admin',contact:'(123) 456-7890',img:''};
-const DEMO={posts:[],inventory:[],sushi:[],vendors:[],cogs:[],tasks:[{id:'todo',name:'To Do',cards:[]},{id:'doing',name:'In Progress',cards:[]},{id:'done',name:'Done',cards:[]},],users:[DEFAULT_ADMIN]};
-const SKEYS=Object.keys(DEMO); let S={};
+const DEMO={posts:[],inventory:[],sushi:[],vendors:[],cogs:[],tasks:[{id:'todo',name:'To Do',cards:[]},{id:'doing',name:'In Progress',cards:[]},{id:'done',name:'Done',cards:[]},]};
+let SKEYS = Object.keys(DEMO); let S = {};
 const UI_DEFAULT={quickPostOpen:false,sidebarOpen:false}; let UI=load('ui',UI_DEFAULT);
 let session=load('session',null); let page=load('page','dashboard');
 
-/* ===== PWA Install Button Support ===== */
-let deferredPrompt = null;
+/* ===== PWA install button ===== */
+let deferredPrompt=null;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault(); deferredPrompt = e;
   const btn = document.getElementById('installBtn'); if (btn) btn.style.display='inline-block';
 });
-window.addEventListener('appinstalled', () => {
-  deferredPrompt = null; showNotif('App installed!');
-  const btn = document.getElementById('installBtn'); if (btn) btn.style.display='none';
-});
+window.addEventListener('appinstalled', () => { deferredPrompt=null; showNotif('App installed!'); const btn=document.getElementById('installBtn'); if(btn) btn.style.display='none'; });
 
 /* ======================
-   Firebase (Auth + Firestore) — Modular SDK
-   ====================== */
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
-import {
-  getAuth, onAuthStateChanged, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, signOut
-} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
-import {
-  getFirestore, doc, getDoc, setDoc, onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
-
-/* Replace with YOUR real config */
+   Firebase (compat)
+   ====================== 
+   IMPORTANT: fill with YOUR project values (Project settings > Web app) */
 const firebaseConfig = {
   apiKey: "AIzaSyBY52zMMQqsvssukui3TfQnMigWoOzeKGk",
   authDomain: "sushi-pos.firebaseapp.com",
@@ -80,61 +62,55 @@ const firebaseConfig = {
   measurementId: "G-M8Q8EJ4T7Q"
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-let cloudUnsub = null;
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db   = firebase.firestore();
 
-const userDocRef = () => (auth.currentUser ? doc(db, 'workspaces', auth.currentUser.uid) : null);
+/* ===== Cloud (no realtime stream; pull/push only) ===== */
+const workspaceRef = () => db.collection('workspaces').doc(auth.currentUser.uid);
+const profileRef   = () => db.collection('profiles').doc(auth.currentUser.uid);
+// optional username mapping (username -> email)
+const unameRef     = (u) => db.collection('usernames').doc((u||'').toLowerCase());
 
 async function cloudSaveAll() {
   if (!auth.currentUser) return;
   const payload = {}; SKEYS.forEach(k => payload[k] = load(k, DEMO[k]));
-  await setDoc(userDocRef(), payload, { merge: true });
+  await workspaceRef().set(payload, { merge: true });
 }
-
 async function cloudLoadAll() {
   if (!auth.currentUser) return;
-  const snap = await getDoc(userDocRef());
-  if (snap.exists()) {
-    const data = snap.data() || {};
+  const ws = await workspaceRef().get();
+  if (ws.exists) {
+    const data = ws.data() || {};
     SKEYS.forEach(k => save(k, data[k] ?? DEMO[k]));
   } else {
-    await setDoc(userDocRef(), DEMO);
+    await workspaceRef().set(DEMO);
+    SKEYS.forEach(k => save(k, DEMO[k]));
   }
 }
-
-function cloudSubscribe() {
-  if (!auth.currentUser) return;
-  if (cloudUnsub) cloudUnsub();
-  cloudUnsub = onSnapshot(userDocRef(), (snap) => {
-    if (!snap.exists()) return;
-    const data = snap.data() || {};
-    SKEYS.forEach(k => save(k, data[k] ?? DEMO[k]));
-    if (q('.app')) renderApp();
-  });
+async function cloudLoadProfile() {
+  if (!auth.currentUser) return null;
+  const p = await profileRef().get();
+  if (p.exists) return p.data();
+  // first account becomes admin
+  const firstAdmin = { role:'admin', name:'Admin', username:'admin', email:auth.currentUser.email || '', contact:'', img:'' };
+  await profileRef().set(firstAdmin, { merge:true });
+  return firstAdmin;
 }
-
+async function cloudSaveProfile(partial){
+  if (!auth.currentUser) return;
+  await profileRef().set(partial, { merge:true });
+}
 async function cloudMaybePush(){ if (auth.currentUser) { try{ await cloudSaveAll(); }catch(e){} } }
 
-async function ensureUsernameMapping(username, email) {
-  if (!username || !email) return;
-  const ref = doc(db, 'usernames', username.toLowerCase());
-  await setDoc(ref, { email: email.toLowerCase() }, { merge: true });
-}
-
 /* ===== Helpers ===== */
-function syncState(){
-  SKEYS.forEach(k=>S[k]=load(k,DEMO[k]));
-  if(!Array.isArray(S.users)) S.users=[];
-  if(!S.users.some(u=>(u.username||'').toLowerCase()===(DEFAULT_ADMIN.username))){
-    S.users.push(DEFAULT_ADMIN); save('users',S.users);
-  }
-}
+function syncState(){ SKEYS.forEach(k=>S[k]=load(k,DEMO[k])); }
 
-/* ===== Layout render ===== */
+/* ===== UI ===== */
 function renderApp(){
   syncState(); applyTheme();
+  const who = session ? (session.username||session.email||'') : '';
+  const role = session ? (session.role||'user') : 'user';
 
   q('#root').innerHTML=`
     <div class="app">
@@ -144,8 +120,7 @@ function renderApp(){
         <div class="topbar">
           <div style="display:flex;align-items:center;gap:8px">
             <button id="burgerFab" class="burger-inline" title="Menu"><i class="ri-menu-line"></i></button>
-            <button id="navToggle" class="small" title="Menu"><i class="ri-menu-line"></i></button>
-            <div class="who">Logged in as: <b>${session?.username || session?.email || '—'}</b> (${session?.role||'user'})</div>
+            <div class="who">Logged in as: <b>${who}</b> (${role})</div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;position:relative">
             <button id="installBtn" class="small" style="display:none"><i class="ri-download-2-line"></i> Install</button>
@@ -154,14 +129,14 @@ function renderApp(){
             <button id="userBtn" class="small" title="Account"><i class="ri-user-3-line"></i></button>
             <button class="small" id="logoutBtn"><i class="ri-logout-box-r-line"></i> Logout</button>
 
-            <div id="userMenu" style="display:none;position:absolute;right:0;top:42px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);min-width:200px;overflow:hidden;z-index:111;">
+            <div id="userMenu" style="display:none;position:absolute;right:0;top:42px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);min-width:220px;overflow:hidden;z-index:111;">
               <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-weight:700">${session?.name || session?.username || 'User'}</div>
               <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:.9em;color:var(--muted)">
                 <div><strong>User:</strong> ${session?.username || '—'}</div>
                 <div><strong>Email:</strong> ${session?.email || '—'}</div>
                 <div><strong>Contact:</strong> ${session?.contact || '—'}</div>
               </div>
-              <button class="menu-btn" style="width:100%;color:var(--text)" id="logoutBtn2"><i class="ri-logout-box-r-line"></i> Logout</button>
+              <button class="menu-btn" style="width:100%;color:var(--text)"><i class="ri-settings-3-line"></i>&nbsp;<span onclick="go('settings')">Settings</span></button>
             </div>
           </div>
         </div>
@@ -172,49 +147,45 @@ function renderApp(){
     </div>
   `;
 
-  // Theme controls
+  // Theme
   const theme=load('theme',{color:'light',font:'medium'}); q('#themeColor').value=theme.color; q('#themeFont').value=theme.font;
   q('#themeColor').onchange=q('#themeFont').onchange=()=>{save('theme',{color:q('#themeColor').value,font:q('#themeFont').value}); applyTheme();};
 
-  // Sidebar wiring
-  const sb=q('.sidebar'); const scr=q('#scrim'); const nt=q('#navToggle'); const bf=q('#burgerFab');
+  // Sidebar
+  const sb=q('.sidebar'); const scr=q('#scrim'); const bf=q('#burgerFab');
   const toggleSide=()=>{UI.sidebarOpen=!UI.sidebarOpen; save('ui',UI); sb.classList.toggle('open',UI.sidebarOpen); if(scr) scr.classList.toggle('show',UI.sidebarOpen && window.innerWidth<=900);};
-  if(nt) nt.onclick=toggleSide; if(bf) bf.onclick=toggleSide;
+  if(bf) bf.onclick=toggleSide;
   sb.classList.toggle('open',UI.sidebarOpen);
-  if(scr){scr.onclick=closeSidebarIfMobile;}
+  if(scr){scr.onclick=()=>closeSidebarIfMobile();}
   q('main').addEventListener('click',()=>{ if(window.innerWidth<=900 && UI.sidebarOpen) closeSidebarIfMobile(); });
   if (window.innerWidth <= 900) { UI.sidebarOpen = false; save('ui', UI); sb.classList.remove('open'); if (scr) scr.classList.remove('show'); }
   window.onresize = () => { if (window.innerWidth <= 900) closeSidebarIfMobile(); };
 
-  // PWA install btn
+  // PWA install
   const installBtn = document.getElementById('installBtn');
   if (installBtn) {
     if (deferredPrompt) installBtn.style.display = 'inline-block';
-    installBtn.onclick = async () => {
-      if (!deferredPrompt) return;
-      deferredPrompt.prompt();
-      await deferredPrompt.userChoice;
-      deferredPrompt = null;
-      installBtn.style.display = 'none';
-    };
+    installBtn.onclick = async () => { if (!deferredPrompt) return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; installBtn.style.display='none'; };
   }
 
-  // User dropdown + logout
+  // User dropdown
   const userBtn = document.getElementById('userBtn');
   const userMenu = document.getElementById('userMenu');
   if (userBtn && userMenu) {
     userBtn.onclick = (e) => { e.stopPropagation(); userMenu.style.display = userMenu.style.display === 'none' ? 'block' : 'none'; };
     document.addEventListener('click', () => { userMenu.style.display = 'none'; }, { once:true });
   }
-  const doLogout = async () => { try { if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; } await signOut(auth); } catch{} save('session',null); session=null; renderLogin(); showNotif('Logged out'); };
-  const lb1=q('#logoutBtn'), lb2=q('#logoutBtn2'); if(lb1) lb1.onclick=doLogout; if(lb2) lb2.onclick=doLogout;
 
-  qa('.menu-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
+  // Logout
+  const logoutBtn = document.getElementById('logoutBtn');
+  if (logoutBtn) logoutBtn.onclick = logout;
+
+  qa('.menu-btn').forEach(b=>b.classList.toggle('active',b.dataset?.page===page));
   afterRender();
 }
 function closeSidebarIfMobile(){UI.sidebarOpen=false; save('ui',UI); const sb=q('.sidebar'); const scr=q('#scrim'); sb.classList.remove('open'); if(scr) scr.classList.remove('show');}
 
-/* ===== Login (username OR email via Firebase) ===== */
+/* ===== Login (username OR email) ===== */
 function renderLogin(){
   applyTheme();
   q('#root').innerHTML=`
@@ -235,36 +206,38 @@ function renderLogin(){
     let email = id.includes('@') ? id : null;
     if (!email) {
       try {
-        const mapDoc = await getDoc(doc(db, 'usernames', id));
-        if (mapDoc.exists()) email = (mapDoc.data().email || '').toLowerCase();
+        const mapDoc = await unameRef(id).get();
+        if (mapDoc.exists) email = (mapDoc.data().email || '').toLowerCase();
       } catch {}
     }
 
     try {
       if (!email) throw new Error('Use email or a mapped username.');
-      await signInWithEmailAndPassword(auth, email, pw);
+      await auth.signInWithEmailAndPassword(email, pw);
+
+      // render immediately; sync in background
+      session = { username:id, email, role:'user', name:'User' };
+      save('session', session); renderApp();
+
+      // background profile + workspace load
+      const prof = await cloudLoadProfile();
+      session = { ...session, ...prof }; save('session', session); renderApp();
       await cloudLoadAll();
-      const users = load('users', [DEFAULT_ADMIN]);
-      const prof = users.find(u => (u.email||'').toLowerCase()===email) || { username:id, email, role:'user', name:'User' };
-      session = { ...prof }; save('session', session);
-      showNotif('Login successful');
       renderApp();
-      cloudSubscribe();
     } catch (err) {
       if (err.code === 'auth/user-not-found') {
         try {
           const createEmail = email || `${crypto.randomUUID().slice(0,8)}@placeholder.local`;
-          await createUserWithEmailAndPassword(auth, createEmail, pw);
-          await setDoc(doc(db,'workspaces', auth.currentUser.uid), DEMO);
-          const users = load('users',[DEFAULT_ADMIN]);
-          const newUser = { name:'New User', username: id.includes('@')? id.split('@')[0] : id, email:createEmail, contact:'', role:'user', password: pw, img:'' };
-          users.push(newUser); save('users', users);
-          await ensureUsernameMapping(newUser.username, createEmail);
-          await cloudLoadAll();
-          session = { ...newUser }; save('session', session);
-          showNotif('Account created');
-          renderApp();
-          cloudSubscribe();
+          await auth.createUserWithEmailAndPassword(createEmail, pw);
+          // first account per project gets admin in profile
+          await profileRef().set({ role: 'admin', name:'Admin', username: id.includes('@')? id.split('@')[0]: id, email:createEmail, contact:'', img:'' }, { merge:true });
+          await workspaceRef().set(DEMO, { merge:true });
+          if (id && createEmail) await unameRef(id).set({ email: createEmail });
+
+          session = { username: id || createEmail.split('@')[0], email:createEmail, role:'admin', name:'Admin' };
+          save('session', session);
+          showNotif('Account created'); renderApp();
+          await cloudLoadAll(); renderApp();
         } catch (e2) {
           q('#loginError').textContent = e2.message || 'Sign up failed';
         }
@@ -285,13 +258,12 @@ function renderSidebar(){
         ${['dashboard','inventory','sushi','vendors','tasks','cogs','settings'].map(p=>`
           <button class="menu-btn" data-page="${p}" onclick="go('${p}')"><i class="ri-${iconFor(p)}"></i> ${cap(p)}</button>`).join('')}
       </nav>
-      <button class="logout" onclick="logout()"><i class="ri-logout-box-r-line"></i> Logout</button>
+      <button class="logout" onclick="logout()">Logout</button>
     </aside>`;
 }
 const iconFor=p=>({dashboard:'dashboard-2-line',inventory:'archive-2-line',sushi:'restaurant-2-line',vendors:'store-3-line',tasks:'task-line',cogs:'coins-line',settings:'settings-3-line'})[p];
 const cap=s=>s[0].toUpperCase()+s.slice(1);
 function go(p){page=p; save('page',p); if(window.innerWidth<=900) closeSidebarIfMobile(); renderApp();}
-function logout(){ /* handled via buttons in renderApp using signOut */ }
 
 /* ===== Pages ===== */
 function renderPage(){
@@ -307,7 +279,7 @@ function renderPage(){
   }
 }
 
-/* ---------- Dashboard (posts full-width + image) ---------- */
+/* ---------- Dashboard ---------- */
 function renderDashboard(){
   const low=S.inventory.filter(i=> i.qty <= (i.critical||0) || i.qty <= (i.low||0));
   const totals=S.cogs.reduce((a,c)=>{const gp=(+c.gross_income||0)-(+c.produce||0)-(+c.item_cost||0)-(+c.freight||0)-(+c.delivery||0)-(+c.other||0); a.gi+=+c.gross_income||0; a.gp+=gp; return a;},{gi:0,gp:0});
@@ -328,29 +300,29 @@ function renderDashboard(){
     <div class="grid auto">
       <div class="card" onclick="go('inventory')">
         <div class="card-actions"><button class="icon-btn edit" onclick="event.stopPropagation();go('inventory')"><i class="ri-arrow-right-up-line"></i></button></div>
-        <div class="stat"><div class="num">${S.inventory.length}</div><div class="hint">Inventory Items</div></div>
+        <div class="stat"><div class="num">${S.inventory.length}</div><div class="card-sub">Inventory Items</div></div>
         ${low.length?`<div class="badge ${low.length>0?'warn':''}" style="margin-top:8px">${low.length} low/critical</div>`:''}
       </div>
       <div class="card" onclick="go('sushi')">
         <div class="card-actions"><button class="icon-btn edit" onclick="event.stopPropagation();go('sushi')"><i class="ri-arrow-right-up-line"></i></button></div>
-        <div class="stat"><div class="num">${S.sushi.length}</div><div class="hint">Sushi Items</div></div>
+        <div class="stat"><div class="num">${S.sushi.length}</div><div class="card-sub">Sushi Items</div></div>
       </div>
       <div class="card" onclick="go('vendors')">
         <div class="card-actions"><button class="icon-btn edit" onclick="event.stopPropagation();go('vendors')"><i class="ri-arrow-right-up-line"></i></button></div>
-        <div class="stat"><div class="num">${S.vendors.length}</div><div class="hint">Vendors</div></div>
+        <div class="stat"><div class="num">${S.vendors.length}</div><div class="card-sub">Vendors</div></div>
       </div>
       <div class="card" onclick="go('tasks')">
         <div class="card-actions"><button class="icon-btn edit" onclick="event.stopPropagation();go('tasks')"><i class="ri-arrow-right-up-line"></i></button></div>
-        <div class="stat"><div class="num">${S.tasks.reduce((a,t)=>a+t.cards.length,0)}</div><div class="hint">Tasks</div></div>
+        <div class="stat"><div class="num">${S.tasks.reduce((a,t)=>a+t.cards.length,0)}</div><div class="card-sub">Tasks</div></div>
       </div>
       <div class="card" onclick="go('cogs')">
         <div class="card-actions"><button class="icon-btn edit" onclick="event.stopPropagation();go('cogs')"><i class="ri-arrow-right-up-line"></i></button></div>
-        <div class="stat"><div class="num">$${totals.gi.toFixed(2)}</div><div class="hint">Total Gross Income</div></div>
+        <div class="stat"><div class="num">$${totals.gi.toFixed(2)}</div><div class="card-sub">Total Gross Income</div></div>
         <div class="card-sub" style="margin-top:6px">Gross Profit: <b>$${totals.gp.toFixed(2)}</b></div>
       </div>
       <div class="card" onclick="go('settings')">
         <div class="card-actions"><button class="icon-btn edit" onclick="event.stopPropagation();go('settings')"><i class="ri-arrow-right-up-line"></i></button></div>
-        <div class="stat"><div class="num">${S.users.length}</div><div class="hint">Users</div></div>
+        <div class="stat"><div class="num">⚙️</div><div class="card-sub">Settings</div></div>
       </div>
     </div>
 
@@ -383,10 +355,10 @@ function wireDashboard(){
   };
 }
 
-/* ---------- Inventory (Qty +/-) ---------- */
+/* ---------- Inventory ---------- */
 function renderInventory(){
   return `
-    <h1>Inventory</h1>
+    <h1 style="padding:12px">Inventory</h1>
     <form class="form" id="invForm" enctype="multipart/form-data">
       <input class="field-3" id="invCode" placeholder="Code (e.g., TUNA-01)">
       <input class="field-3" id="invName" placeholder="Name (e.g., Tuna)">
@@ -410,9 +382,9 @@ function renderInventory(){
             <td>${it.name}</td>
             <td>
               <div class="qty">
-                <button class="btn" onclick="decQty(${i});return false;">−</button>
+                <button class="btn small" onclick="decQty(${i});return false;">−</button>
                 <strong>${it.qty}</strong> ${badge}
-                <button class="btn" onclick="incQty(${i});return false;">+</button>
+                <button class="btn small" onclick="incQty(${i});return false;">+</button>
               </div>
             </td>
             <td>${it.low||0}</td>
@@ -456,7 +428,7 @@ function editInv(i){
       <input class="field-2" id="eCritical" type="number" value="${it.critical||0}" placeholder="Critical">
       <input class="field-12" id="eImg" type="file" accept="image/*">
       ${it.img?`<img src="${it.img}" class="img-thumb" style="margin-left:8px">`:''}
-      <div class="field-12" style="display:flex;gap:8px"><button class="btn" type="submit">Save</button><button class="small" type="button" onclick="closeModal()">Cancel</button></div>
+      <div class="field-12" style="display:flex;gap:8px"><button class="btn" type="submit">Save</button><button class="btn small" type="button" onclick="closeModal()">Cancel</button></div>
     </form>`);
   q('#editInvForm').onsubmit=async(e)=>{e.preventDefault();
     const inv=load('inventory',[]);
@@ -471,7 +443,7 @@ function delInv(i){const inv=load('inventory',[]); inv.splice(i,1); save('invent
 /* ---------- Sushi ---------- */
 function renderSushi(){
   return `
-    <h1>Sushi Items</h1>
+    <h1 style="padding:12px">Sushi Items</h1>
     <form class="form" id="sushiForm" enctype="multipart/form-data">
       <input class="field-4" id="suName" placeholder="Name (e.g., Tuna Roll)">
       <input class="field-2" id="suPrice" type="number" step="0.01" placeholder="Price">
@@ -489,7 +461,7 @@ function renderSushi(){
             <button class="icon-btn edit" onclick="event.stopPropagation();editSushi(${i})"><i class="ri-edit-2-line"></i></button>
             <button class="icon-btn delete" onclick="event.stopPropagation();delSushi(${i})"><i class="ri-delete-bin-6-line"></i></button>
           </div>
-          ${s.img?`<img src="${s.img}" class="card-img" alt="${s.name}">`:`<div class="card-img"></div>`}
+          ${s.img?`<img src="${s.img}" class="post-img" style="height:220px" alt="${s.name}">`:`<div class="card-img" style="height:220px;background:#f8fafc;border:1px dashed var(--border);border-radius:12px"></div>`}
           <div class="card-title">${s.name}</div>
           <div class="card-sub">${s.type||'—'} • $${(+s.price||0).toFixed(2)}</div>
         </div>`).join('')}
@@ -531,7 +503,7 @@ function editSushi(i){
       ${s.img?`<img src="${s.img}" class="img-thumb" style="margin-left:8px">`:''}
       <textarea class="field-6" id="eSuIngr">${s.ingredients||''}</textarea>
       <textarea class="field-6" id="eSuInst">${s.instructions||''}</textarea>
-      <div class="field-12" style="display:flex;gap:8px"><button class="btn" type="submit">Save</button><button type="button" class="small" onclick="closeModal()">Cancel</button></div>
+      <div class="field-12" style="display:flex;gap:8px"><button class="btn" type="submit">Save</button><button type="button" class="btn small" onclick="closeModal()">Cancel</button></div>
     </form>`);
   q('#eSuType').value=s.type||'';
   q('#editSu').onsubmit=async(e)=>{e.preventDefault();
@@ -549,7 +521,7 @@ function delSushi(i){const sushi=load('sushi',[]); sushi.splice(i,1); save('sush
 /* ---------- Vendors ---------- */
 function renderVendors(){
   return `
-    <h1>Vendors</h1>
+    <h1 style="padding:12px">Vendors</h1>
     <form class="form" id="venForm">
       <input class="field-3" id="vName" placeholder="Vendor name">
       <input class="field-3" id="vPhone" placeholder="Phone">
@@ -589,7 +561,7 @@ function editVendor(i){
       <input class="field-3" id="eVPhone" value="${v.phone}">
       <input class="field-3" id="eVEmail" value="${v.email||''}">
       <input class="field-3" id="eVAddr" value="${v.address||''}">
-      <div class="field-12" style="display:flex;gap:8px"><button class="btn" type="submit">Save</button><button type="button" class="small" onclick="closeModal()">Cancel</button></div>
+      <div class="field-12" style="display:flex;gap:8px"><button class="btn" type="submit">Save</button><button type="button" class="btn small" onclick="closeModal()">Cancel</button></div>
     </form>`);
   q('#eVPhone').oninput=()=>{q('#eVPhone').value=formatPhone(q('#eVPhone').value);};
   q('#editVen').onsubmit=(e)=>{e.preventDefault();
@@ -604,7 +576,7 @@ function delVendor(i){const vendors=load('vendors',[]); vendors.splice(i,1); sav
 let dragCtx=null;
 function renderTasks(){
   return `
-    <h1>Tasks</h1>
+    <h1 style="padding:12px">Tasks</h1>
     <div class="kanban">
       ${S.tasks.map(list=>`
         <div class="list">
@@ -619,7 +591,7 @@ function renderTasks(){
                 </span>
               </div>`).join('')}
           </div>
-          <div class="kadd"><input id="${list.id}New" placeholder="Add task…"><button class="small brand" onclick="addTask('${list.id}')"><i class="ri-add-line"></i></button></div>
+          <div class="kadd"><input id="${list.id}New" placeholder="Add task…"><button class="btn small brand" onclick="addTask('${list.id}')"><i class="ri-add-line"></i></button></div>
         </div>`).join('')}
     </div>`;
 }
@@ -640,7 +612,7 @@ function editTask(listId,idx){
     <h2>Edit Task</h2>
     <form class="form" id="et">
       <input class="field-12" id="etxt" value="${S.tasks.find(l=>l.id===listId).cards[idx]}">
-      <div class="field-12" style="display:flex;gap:8px"><button class="btn" type="submit">Save</button><button type="button" class="small" onclick="closeModal()">Cancel</button></div>
+      <div class="field-12" style="display:flex;gap:8px"><button class="btn" type="submit">Save</button><button type="button" class="btn small" onclick="closeModal()">Cancel</button></div>
     </form>`);
   q('#et').onsubmit=e=>{e.preventDefault(); const tasks=load('tasks',DEMO.tasks); tasks.find(l=>l.id===listId).cards[idx]=q('#etxt').value.trim(); save('tasks',tasks); showNotif('Task updated'); closeModal(); renderApp(); };
 }
@@ -650,7 +622,7 @@ function delTask(listId,idx){const tasks=load('tasks',DEMO.tasks); tasks.find(l=
 function renderCogs(){
   const totals=S.cogs.reduce((a,c)=>{const gi=+c.gross_income||0,pr=+c.produce||0,ic=+c.item_cost||0,fr=+c.freight||0,de=+c.delivery||0,ot=+c.other||0; const gp=gi-pr-ic-fr-de-ot; a.gi+=gi;a.pr+=pr;a.ic+=ic;a.fr+=fr;a.de+=de;a.ot+=ot;a.gp+=gp; return a;},{gi:0,pr:0,ic:0,fr:0,de:0,ot:0,gp:0});
   return `
-    <h1>COGS</h1>
+    <h1 style="padding:12px">COGS</h1>
     <form class="form" id="cogsForm">
       <input class="field-3" id="cgWeek" placeholder="Week (e.g., 2025-W32)">
       <input class="field-3" id="cgGI" type="number" step="0.01" placeholder="Gross Income">
@@ -696,7 +668,7 @@ function editCogs(i){
       <input class="field-2" id="eFR" type="number" step="0.01" value="${c.freight||0}">
       <input class="field-2" id="eDE" type="number" step="0.01" value="${c.delivery||0}">
       <input class="field-2" id="eOT" type="number" step="0.01" value="${c.other||0}">
-      <div class="field-12" style="display:flex;gap:8px"><button class="btn" type="submit">Save</button><button type="button" class="small" onclick="closeModal()">Cancel</button></div>
+      <div class="field-12" style="display:flex;gap:8px"><button class="btn" type="submit">Save</button><button type="button" class="btn small" onclick="closeModal()">Cancel</button></div>
     </form>`);
   q('#ec').onsubmit=e=>{e.preventDefault();
     const cogs=load('cogs',[]); const rec=cogs[i];
@@ -706,85 +678,72 @@ function editCogs(i){
 }
 function delCogs(i){const cogs=load('cogs',[]); cogs.splice(i,1); save('cogs',cogs); showNotif('COGS deleted'); renderApp();}
 
-/* ---------- Settings (Users) ---------- */
+/* ---------- Settings (Profile & Roles) ---------- */
 function renderSettings(){
+  const canEditRole = (session?.role || 'user') === 'admin';
   return `
-    <h1>Settings</h1>
+    <h1 style="padding:12px">Settings</h1>
     <form class="form" id="userForm" enctype="multipart/form-data">
-      <input class="field-3" id="uName" placeholder="Full name">
-      <input class="field-3" id="uUser" placeholder="Username">
-      <input class="field-3" id="uEmail" placeholder="Email (optional)">
-      <input class="field-3" id="uPhone" placeholder="Contact">
-      <select class="field-3" id="uRole"><option>user</option><option>staff</option><option>manager</option><option selected>admin</option></select>
-      <input class="field-6" id="uPass" placeholder="Password" type="password">
+      <input class="field-3" id="uName" placeholder="Full name" value="${session?.name||''}">
+      <input class="field-3" id="uUser" placeholder="Username" value="${session?.username||''}">
+      <input class="field-3" id="uEmail" placeholder="Email" value="${session?.email||''}">
+      <input class="field-3" id="uPhone" placeholder="Contact" value="${session?.contact||''}">
+      <select class="field-3" id="uRole" ${canEditRole?'':'disabled'}>
+        ${['user','staff','manager','admin'].map(r=>`<option ${((session?.role||'user')===r)?'selected':''}>${r}</option>`).join('')}
+      </select>
       <input class="field-6" id="uImg" type="file" accept="image/*">
-      <button class="btn field-12" type="submit">Add User</button>
+      <button class="btn field-12" type="submit">Save Profile ${canEditRole?'(role editable)':''}</button>
     </form>
 
     <div class="users">
-      ${S.users.map((u,i)=>`
-        <div class="card ucard">
-          <img src="${u.img||''}" class="uimg" alt="">
-          <div style="flex:1">
-            <div class="card-title">${u.name} <span class="badge" style="margin-left:6px;background:rgba(14,165,165,.12);color:var(--brand)">${u.role}</span></div>
-            <div class="card-sub">
-              <div><strong>Username:</strong> ${u.username || '—'}</div>
-              <div><strong>Email:</strong> ${u.email || '—'}</div>
-              <div><strong>Contact:</strong> ${u.contact || '—'}</div>
-            </div>
+      <div class="card ucard">
+        <img src="${session?.img||''}" class="uimg" alt="">
+        <div style="flex:1">
+          <div class="card-title">${session?.name||'—'} <span class="badge" style="margin-left:6px;background:rgba(14,165,165,.12);color:var(--brand)">${session?.role||'user'}</span></div>
+          <div class="card-sub">
+            <div><strong>Username:</strong> ${session?.username || '—'}</div>
+            <div><strong>Email:</strong> ${session?.email || '—'}</div>
+            <div><strong>Contact:</strong> ${session?.contact || '—'}</div>
           </div>
-          <div class="card-actions" style="position:static">
-            <button class="icon-btn edit" onclick="editUser(${i})"><i class="ri-edit-2-line"></i></button>
-            <button class="icon-btn delete" onclick="delUser(${i})"><i class="ri-delete-bin-6-line"></i></button>
-          </div>
-        </div>`).join('')}
-    </div>`;
+        </div>
+      </div>
+    </div>
+
+    <div style="padding:0 12px 12px;color:var(--muted);font-size:.9rem">
+      <b>About roles:</b> First account becomes <b>admin</b>. Other people should sign up on their own device; they’ll start as <b>user</b>.  
+      An <b>admin</b> can change their own role here (and, with a small Cloud Function, could manage other accounts’ roles centrally).
+    </div>
+  `;
 }
 function wireSettings(){
   const f=q('#userForm'); if(!f) return;
   const phone=q('#uPhone'); phone.oninput=()=>{phone.value=formatPhone(phone.value);};
   f.onsubmit=async(e)=>{e.preventDefault();
-    const name=q('#uName').value.trim(), username=q('#uUser').value.trim().toLowerCase();
-    if(!name || !username) return showNotif('Name and username required');
-    const role=q('#uRole').value, contact=formatPhone(q('#uPhone').value), password=q('#uPass').value, email=(q('#uEmail').value||'').trim();
-    const file=q('#uImg').files[0];
-    const users=load('users',[DEFAULT_ADMIN]);
-    if(users.some(u=>(u.username||'').toLowerCase()===username)){ showNotif('Username already exists'); return; }
-    let img=''; if(file) img=await compressImage(file, 1000, 1000, 0.8);
-    users.push({name,username,email,contact,role,password,img}); save('users',users);
-    if (email) ensureUsernameMapping(username, email).catch(()=>{});
-    showNotif('User added'); renderApp();
+    try{
+      let img=session?.img||'';
+      const file=q('#uImg').files[0]; if(file) img=await compressImage(file, 1000, 1000, 0.8);
+      const data={
+        name:q('#uName').value.trim(),
+        username:q('#uUser').value.trim().toLowerCase(),
+        email:q('#uEmail').value.trim(),
+        contact:formatPhone(q('#uPhone').value),
+        img
+      };
+      // role editable only for admins
+      if ((session?.role||'user') === 'admin') data.role = q('#uRole').value;
+
+      await cloudSaveProfile(data);
+
+      // username -> email map
+      if (data.username && data.email) { try { await unameRef(data.username).set({ email: data.email.toLowerCase() }); } catch {} }
+
+      session = { ...session, ...data };
+      save('session', session);
+      showNotif('Profile saved');
+      renderApp();
+    } catch(e){ showNotif('Failed to save profile'); }
   };
 }
-function editUser(i){
-  const u=S.users[i];
-  openModal(`
-    <h2>Edit User</h2>
-    <form class="form" id="eu" enctype="multipart/form-data">
-      <input class="field-3" id="eUN" value="${u.name}">
-      <input class="field-3" id="eUU" value="${u.username}">
-      <input class="field-3" id="eUE" value="${u.email||''}">
-      <input class="field-3" id="eUP" value="${u.contact||''}">
-      <select class="field-3" id="eUR">${['user','staff','manager','admin'].map(r=>`<option ${u.role===r?'selected':''}>${r}</option>`).join('')}</select>
-      <input class="field-6" id="eUPW" value="${u.password||''}" type="password">
-      <input class="field-6" id="eUImg" type="file" accept="image/*">
-      ${u.img?`<img src="${u.img}" class="img-thumb" style="margin-left:8px">`:''}
-      <div class="field-12" style="display:flex;gap:8px"><button class="btn" type="submit">Save</button><button type="button" class="small" onclick="closeModal()">Cancel</button></div>
-    </form>`);
-  q('#eUP').oninput=()=>{q('#eUP').value=formatPhone(q('#eUP').value);};
-  q('#eu').onsubmit=async(e)=>{e.preventDefault();
-    const users=load('users',[DEFAULT_ADMIN]); const rec=users[i];
-    const newUsername=q('#eUU').value.trim().toLowerCase(); if(!newUsername) return;
-    if(users.some((x,idx)=>idx!==i && (x.username||'').toLowerCase()===newUsername)){ showNotif('Username already exists'); return; }
-    rec.name=q('#eUN').value.trim(); rec.username=newUsername; rec.email=q('#eUE').value.trim(); rec.contact=formatPhone(q('#eUP').value);
-    rec.role=q('#eUR').value; rec.password=q('#eUPW').value;
-    const f=q('#eUImg').files[0]; if(f){ rec.img=await compressImage(f, 1000, 1000, 0.8); }
-    save('users',users);
-    if (rec.email) ensureUsernameMapping(rec.username, rec.email).catch(()=>{});
-    showNotif('User updated'); closeModal(); renderApp();
-  };
-}
-function delUser(i){const users=load('users',[DEFAULT_ADMIN]); users.splice(i,1); save('users',users); showNotif('User deleted'); renderApp();}
 
 /* ---------- Posts edit/del ---------- */
 function editPost(i){
@@ -796,7 +755,7 @@ function editPost(i){
       <textarea class="field-12" id="b">${p.body||''}</textarea>
       <input class="field-12" id="pi" type="file" accept="image/*">
       ${p.img?`<img src="${p.img}" class="img-thumb" style="margin-left:8px">`:''}
-      <div class="field-12" style="display:flex;gap:8px"><button class="btn" type="submit">Save</button><button type="button" class="small" onclick="closeModal()">Cancel</button></div>
+      <div class="field-12" style="display:flex;gap:8px"><button class="btn" type="submit">Save</button><button type="button" class="btn small" onclick="closeModal()">Cancel</button></div>
     </form>`);
   q('#ep').onsubmit=async(e)=>{e.preventDefault();
     const posts=load('posts',[]); const rec=posts[i];
@@ -811,6 +770,11 @@ function delPost(i){const posts=load('posts',[]); posts.splice(i,1); save('posts
 function openModal(html){const m=q('#modal'); q('#modalInner').innerHTML=html; m.style.display='flex'; m.onclick=e=>{ if(e.target===m) closeModal(); };}
 function closeModal(){const m=q('#modal'); m.style.display='none'; q('#modalInner').innerHTML='';}
 
+async function logout(){
+  try { await auth.signOut(); } catch {}
+  save('session',null); session=null; renderLogin(); showNotif('Logged out');
+}
+
 function doSearch(term){
   if(!term){showNotif('Type something to search'); return;}
   const t=term.toLowerCase(); const hits=[];
@@ -819,11 +783,14 @@ function doSearch(term){
   S.vendors.forEach((x,i)=>{ if(Object.values(x).join(' ').toLowerCase().includes(t)) hits.push({type:'vendors',i,label:`Vendor • ${x.name}`});});
   S.tasks.forEach(list=> list.cards.forEach((c,ci)=>{ if((c||'').toLowerCase().includes(t)) hits.push({type:'tasks',i:ci,extra:list.id,label:`Task • ${c}`});}));
   if(!hits.length){showNotif('No results'); return;}
-  openModal(`<h2>Search results</h2><div class="grid auto">${hits.map(h=>`<div class="card" onclick="jump('${h.type}')">${h.label}</div>`).join('')}</div><div style="margin-top:10px"><button class="small" onclick="closeModal()">Close</button></div>`);
+  openModal(`<h2>Search results</h2><div class="grid auto">${hits.map(h=>`<div class="card" onclick="jump('${h.type}')">${h.label}</div>`).join('')}</div><div style="margin-top:10px"><button class="btn small" onclick="closeModal()">Close</button></div>`);
 }
 function jump(type){closeModal(); page=type; save('page',page); if(window.innerWidth<=900) closeSidebarIfMobile(); renderApp();}
 
 /* ===== Boot ===== */
+function render() {
+  if (session) renderApp(); else renderLogin();
+}
 function afterRender(){
   const gs=q('#globalSearch'); if(gs){ gs.onkeyup=e=>{ if(e.key==='Enter') doSearch(gs.value.trim()); }; }
   if(page==='dashboard') wireDashboard();
@@ -835,18 +802,29 @@ function afterRender(){
   if(page==='settings') wireSettings();
 }
 
-onAuthStateChanged(getAuth(), async (user) => {
+// Auth boot (fast UI, background sync)
+auth.onAuthStateChanged(async (user) => {
   applyTheme();
   if (user) {
-    try { await cloudLoadAll(); } catch {}
-    const users = load('users',[DEFAULT_ADMIN]);
-    const prof = users.find(u => (u.email||'').toLowerCase() === (user.email||'').toLowerCase());
-    session = prof ? {...prof} : { username: (user.email||'').split('@')[0], email:user.email||'', role:'user', name:'User' };
+    // try to reuse last session username/email
+    if (!session) session = { username: (user.email||'').split('@')[0], email:user.email||'', role:'user', name:'User' };
     save('session', session);
-    renderApp();
-    cloudSubscribe();
+    render();
+
+    // Pull profile (role etc) and workspace in background
+    try {
+      const prof = await cloudLoadProfile();
+      session = { ...session, ...prof, email: user.email || session.email };
+      save('session', session);
+      await cloudLoadAll();
+      renderApp();
+    } catch(e){
+      // don’t block UI
+    }
   } else {
-    session = load('session', null);
-    if (session) { renderApp(); } else { renderLogin(); }
+    session=null; save('session',null); renderLogin();
   }
 });
+
+// start
+applyTheme(); render();

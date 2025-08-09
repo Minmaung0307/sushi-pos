@@ -1,42 +1,70 @@
-// Sushi POS Service Worker
+// Sushi POS Service Worker (app shell + instant updates)
 
-const CACHE_NAME = 'sushi-pos-cache-v1';
-const OFFLINE_URLS = [
+const CACHE = 'sushi-pos-v2';
+const CORE = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icons/icon-512.png',
 ];
 
-// Install SW and cache files
+// Install: cache app shell
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(OFFLINE_URLS))
-      .then(self.skipWaiting())
+    caches.open(CACHE).then((c) => c.addAll(CORE))
   );
+  // Keep the new worker in "waiting" until page tells us to skip
 });
 
-// Activate SW and clean old caches
+// Allow page to request immediate activation
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') {
+     self.skipWaiting();
+  }
+});
+
+// Activate: cleanup old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.map((key) => {
-        if (key !== CACHE_NAME) {
-          return caches.delete(key);
-        }
-      }))
+    caches.keys().then(keys =>
+      Promise.all(keys.map(k => (k !== CACHE ? caches.delete(k) : null)))
     )
   );
   self.clients.claim();
 });
 
-// Fetch requests
+// Strategy:
+// - HTML: network first (falls back to cache)
+// - Static assets: stale-while-revalidate
+// - Otherwise: cache-first fallback to network
 self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
-  );
+  const req = event.request;
+  const isHTML = req.destination === 'document' || req.headers.get('accept')?.includes('text/html');
+  const isStatic = ['style', 'script', 'image', 'font'].includes(req.destination);
+
+  if (isHTML) {
+    event.respondWith(
+      fetch(req).then(r => {
+        const copy = r.clone();
+        caches.open(CACHE).then(c => c.put(req, copy));
+        return r;
+      }).catch(() => caches.match(req) || caches.match('./index.html'))
+    );
+    return;
+  }
+
+  if (isStatic) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      const cached = await cache.match(req);
+      const net = fetch(req).then(r => { cache.put(req, r.clone()); return r; }).catch(() => null);
+      return cached || net || Response.error();
+    })());
+    return;
+  }
+
+  event.respondWith(caches.match(req).then(c => c || fetch(req)));
 });

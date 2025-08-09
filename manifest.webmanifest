@@ -1,23 +1,29 @@
 {
   "name": "Sushi POS",
   "short_name": "SushiPOS",
-  "description": "A PWA-enabled POS system for sushi restaurants.",
+  "id": "/",
+  "description": "A PWA-enabled POS system for sushi restaurants with inventory, staff, and sales management.",
+  "lang": "en",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#0ea5a5",
   "theme_color": "#0ea5a5",
   "orientation": "portrait",
+  "categories": ["business", "productivity", "utilities"],
   "icons": [
     {
       "src": "icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "icons/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

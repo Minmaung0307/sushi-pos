@@ -4,34 +4,82 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0ea5a5" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Sushi POS</title>
 
-  <!-- Styles -->
   <link rel="stylesheet" href="styles.css" />
 
-  <!-- Icons -->
+  <!-- Remix Icon -->
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.3.0/fonts/remixicon.css" rel="stylesheet" />
 
   <!-- PWA -->
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
 </head>
 <body>
-  <!-- Toast + Root (required by app.js) -->
   <div id="notification" class="notification"></div>
   <div id="root"></div>
 
-  <!-- Main JS (ESM) -->
-  <script type="module" src="app.js"></script>
+  <!-- Firebase SDKs (compat ONLY) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
 
-  <!-- Service worker -->
+  <!-- Main (NOT module when using compat) -->
+  <script src="app.js"></script>
+
+  <!-- Service Worker -->
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(err => console.error('SW registration failed:', err));
     }
   </script>
+  <script>
+  // Robust SW registration with instant-update prompt
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', async () => {
+      try {
+        const reg = await navigator.serviceWorker.register('./sw.js');
+
+        // If there's an already waiting worker, prompt now
+        if (reg.waiting) {
+          promptToRefresh(reg.waiting);
+        }
+
+        // When a new worker is found, track its state
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+              // New version installed and waiting
+              promptToRefresh(reg.waiting || nw);
+            }
+          });
+        });
+
+        // After we tell the SW to skip waiting, this fires once it takes control
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          // Avoid multiple reloads
+          if (window.__reloading) return;
+          window.__reloading = true;
+          window.location.reload();
+        });
+      } catch (err) {
+        console.error('SW registration failed:', err);
+      }
+    });
+
+    function promptToRefresh(waitingWorker) {
+      // Simple UX: confirm dialog (you can replace with your toast UI)
+      const yes = confirm('An update is ready. Reload to apply now?');
+      if (yes) {
+        waitingWorker?.postMessage('SKIP_WAITING');
+      }
+    }
+  }
+</script>
 </body>
 </html>
