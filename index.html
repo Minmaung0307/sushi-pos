@@ -9,26 +9,23 @@
   <!-- Styles -->
   <link rel="stylesheet" href="styles.css" />
 
-  <!-- Remix Icon -->
+  <!-- Icons -->
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.3.0/fonts/remixicon.css" rel="stylesheet" />
 
-  <!-- Manifest & PWA -->
+  <!-- PWA -->
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
 </head>
 <body>
-  <!-- Toast + Root (these IDs are required by app.js) -->
+  <!-- Toast + Root (required by app.js) -->
   <div id="notification" class="notification"></div>
   <div id="root"></div>
 
-  <!-- Firebase SDKs (compat to match app.js) -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
-
-  <!-- Main JS -->
-  <script src="app.js"></script>
+  <!-- Main JS (ESM) -->
+  <script type="module" src="app.js"></script>
 
   <!-- Service worker -->
   <script>

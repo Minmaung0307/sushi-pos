@@ -1,5 +1,5 @@
 /* =========================
-   Sushi POS — App (Firebase)
+   Sushi POS — App (Firebase, Modular SDK)
    ========================= */
 
 /* ===== Utilities ===== */
@@ -58,50 +58,57 @@ window.addEventListener('appinstalled', () => {
 });
 
 /* ======================
-   Firebase (Auth + DB)
+   Firebase (Auth + Firestore) — Modular SDK
    ====================== */
-// Add SDK tags in index.html:
-// <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
-// <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
-// <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword,
+  createUserWithEmailAndPassword, signOut
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+import {
+  getFirestore, doc, getDoc, setDoc, onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
 
+/* Replace with YOUR real config */
 const firebaseConfig = {
-  apiKey: "YOUR_KEY",
-  authDomain: "YOUR_ID.firebaseapp.com",
-  projectId: "YOUR_ID",
-  storageBucket: "YOUR_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER",
-  appId: "YOUR_APPID"
+  apiKey: "AIzaSyBY52zMMQqsvssukui3TfQnMigWoOzeKGk",
+  authDomain: "sushi-pos.firebaseapp.com",
+  projectId: "sushi-pos",
+  storageBucket: "sushi-pos.firebasestorage.app",
+  messagingSenderId: "909622476838",
+  appId: "1:909622476838:web:1a1fb221a6a79fcaf4a6e7",
+  measurementId: "G-M8Q8EJ4T7Q"
 };
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.firestore();
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 let cloudUnsub = null;
 
-const userDocRef = () => db.collection('workspaces').doc(auth.currentUser.uid);
+const userDocRef = () => (auth.currentUser ? doc(db, 'workspaces', auth.currentUser.uid) : null);
 
 async function cloudSaveAll() {
   if (!auth.currentUser) return;
   const payload = {}; SKEYS.forEach(k => payload[k] = load(k, DEMO[k]));
-  await userDocRef().set(payload, { merge: true });
+  await setDoc(userDocRef(), payload, { merge: true });
 }
 
 async function cloudLoadAll() {
   if (!auth.currentUser) return;
-  const snap = await userDocRef().get();
-  if (snap.exists) {
+  const snap = await getDoc(userDocRef());
+  if (snap.exists()) {
     const data = snap.data() || {};
     SKEYS.forEach(k => save(k, data[k] ?? DEMO[k]));
   } else {
-    await userDocRef().set(DEMO);
+    await setDoc(userDocRef(), DEMO);
   }
 }
 
 function cloudSubscribe() {
   if (!auth.currentUser) return;
   if (cloudUnsub) cloudUnsub();
-  cloudUnsub = userDocRef().onSnapshot(snap => {
-    if (!snap.exists) return;
+  cloudUnsub = onSnapshot(userDocRef(), (snap) => {
+    if (!snap.exists()) return;
     const data = snap.data() || {};
     SKEYS.forEach(k => save(k, data[k] ?? DEMO[k]));
     if (q('.app')) renderApp();
@@ -112,7 +119,8 @@ async function cloudMaybePush(){ if (auth.currentUser) { try{ await cloudSaveAll
 
 async function ensureUsernameMapping(username, email) {
   if (!username || !email) return;
-  await db.collection('usernames').doc(username.toLowerCase()).set({ email: email.toLowerCase() });
+  const ref = doc(db, 'usernames', username.toLowerCase());
+  await setDoc(ref, { email: email.toLowerCase() }, { merge: true });
 }
 
 /* ===== Helpers ===== */
@@ -135,27 +143,25 @@ function renderApp(){
       <main class="main">
         <div class="topbar">
           <div style="display:flex;align-items:center;gap:8px">
-            <!-- Inline burger on mobile/tablet -->
             <button id="burgerFab" class="burger-inline" title="Menu"><i class="ri-menu-line"></i></button>
-            <!-- Desktop three-lines -->
             <button id="navToggle" class="small" title="Menu"><i class="ri-menu-line"></i></button>
-            <div class="who">Logged in as: <b>${session.username || session.email}</b> (${session.role})</div>
+            <div class="who">Logged in as: <b>${session?.username || session?.email || '—'}</b> (${session?.role||'user'})</div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;position:relative">
             <button id="installBtn" class="small" style="display:none"><i class="ri-download-2-line"></i> Install</button>
             <select id="themeColor" class="small"><option value="light">Light</option><option value="dark">Dark</option></select>
             <select id="themeFont" class="small"><option value="small">Small</option><option value="medium" selected>Medium</option><option value="large">Large</option></select>
             <button id="userBtn" class="small" title="Account"><i class="ri-user-3-line"></i></button>
-            <button class="small" onclick="logout()"><i class="ri-logout-box-r-line"></i> Logout</button>
+            <button class="small" id="logoutBtn"><i class="ri-logout-box-r-line"></i> Logout</button>
 
             <div id="userMenu" style="display:none;position:absolute;right:0;top:42px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);min-width:200px;overflow:hidden;z-index:111;">
-              <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-weight:700">${session.name || session.username}</div>
+              <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-weight:700">${session?.name || session?.username || 'User'}</div>
               <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:.9em;color:var(--muted)">
-                <div><strong>User:</strong> ${session.username || '—'}</div>
-                <div><strong>Email:</strong> ${session.email || '—'}</div>
-                <div><strong>Contact:</strong> ${session.contact || '—'}</div>
+                <div><strong>User:</strong> ${session?.username || '—'}</div>
+                <div><strong>Email:</strong> ${session?.email || '—'}</div>
+                <div><strong>Contact:</strong> ${session?.contact || '—'}</div>
               </div>
-              <button class="menu-btn" style="width:100%;color:var(--text)" onclick="logout()"><i class="ri-logout-box-r-line"></i> Logout</button>
+              <button class="menu-btn" style="width:100%;color:var(--text)" id="logoutBtn2"><i class="ri-logout-box-r-line"></i> Logout</button>
             </div>
           </div>
         </div>
@@ -193,13 +199,15 @@ function renderApp(){
     };
   }
 
-  // User dropdown
+  // User dropdown + logout
   const userBtn = document.getElementById('userBtn');
   const userMenu = document.getElementById('userMenu');
   if (userBtn && userMenu) {
     userBtn.onclick = (e) => { e.stopPropagation(); userMenu.style.display = userMenu.style.display === 'none' ? 'block' : 'none'; };
     document.addEventListener('click', () => { userMenu.style.display = 'none'; }, { once:true });
   }
+  const doLogout = async () => { try { if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; } await signOut(auth); } catch{} save('session',null); session=null; renderLogin(); showNotif('Logged out'); };
+  const lb1=q('#logoutBtn'), lb2=q('#logoutBtn2'); if(lb1) lb1.onclick=doLogout; if(lb2) lb2.onclick=doLogout;
 
   qa('.menu-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
   afterRender();
@@ -227,16 +235,15 @@ function renderLogin(){
     let email = id.includes('@') ? id : null;
     if (!email) {
       try {
-        const mapDoc = await db.collection('usernames').doc(id).get();
-        if (mapDoc.exists) email = (mapDoc.data().email || '').toLowerCase();
+        const mapDoc = await getDoc(doc(db, 'usernames', id));
+        if (mapDoc.exists()) email = (mapDoc.data().email || '').toLowerCase();
       } catch {}
     }
 
     try {
       if (!email) throw new Error('Use email or a mapped username.');
-      await auth.signInWithEmailAndPassword(email, pw);
+      await signInWithEmailAndPassword(auth, email, pw);
       await cloudLoadAll();
-      // Find profile locally (or minimal fallback)
       const users = load('users', [DEFAULT_ADMIN]);
       const prof = users.find(u => (u.email||'').toLowerCase()===email) || { username:id, email, role:'user', name:'User' };
       session = { ...prof }; save('session', session);
@@ -246,11 +253,9 @@ function renderLogin(){
     } catch (err) {
       if (err.code === 'auth/user-not-found') {
         try {
-          // Create new account with provided email or a placeholder if user typed username without email
           const createEmail = email || `${crypto.randomUUID().slice(0,8)}@placeholder.local`;
-          await auth.createUserWithEmailAndPassword(createEmail, pw);
-          await userDocRef().set(DEMO);
-          // Store a local profile
+          await createUserWithEmailAndPassword(auth, createEmail, pw);
+          await setDoc(doc(db,'workspaces', auth.currentUser.uid), DEMO);
           const users = load('users',[DEFAULT_ADMIN]);
           const newUser = { name:'New User', username: id.includes('@')? id.split('@')[0] : id, email:createEmail, contact:'', role:'user', password: pw, img:'' };
           users.push(newUser); save('users', users);
@@ -280,12 +285,13 @@ function renderSidebar(){
         ${['dashboard','inventory','sushi','vendors','tasks','cogs','settings'].map(p=>`
           <button class="menu-btn" data-page="${p}" onclick="go('${p}')"><i class="ri-${iconFor(p)}"></i> ${cap(p)}</button>`).join('')}
       </nav>
-      <button class="logout" onclick="logout()">Logout</button>
+      <button class="logout" onclick="logout()"><i class="ri-logout-box-r-line"></i> Logout</button>
     </aside>`;
 }
 const iconFor=p=>({dashboard:'dashboard-2-line',inventory:'archive-2-line',sushi:'restaurant-2-line',vendors:'store-3-line',tasks:'task-line',cogs:'coins-line',settings:'settings-3-line'})[p];
 const cap=s=>s[0].toUpperCase()+s.slice(1);
 function go(p){page=p; save('page',p); if(window.innerWidth<=900) closeSidebarIfMobile(); renderApp();}
+function logout(){ /* handled via buttons in renderApp using signOut */ }
 
 /* ===== Pages ===== */
 function renderPage(){
@@ -805,11 +811,6 @@ function delPost(i){const posts=load('posts',[]); posts.splice(i,1); save('posts
 function openModal(html){const m=q('#modal'); q('#modalInner').innerHTML=html; m.style.display='flex'; m.onclick=e=>{ if(e.target===m) closeModal(); };}
 function closeModal(){const m=q('#modal'); m.style.display='none'; q('#modalInner').innerHTML='';}
 
-async function logout(){
-  try { if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; } await auth.signOut(); } catch {}
-  save('session',null); session=null; renderLogin(); showNotif('Logged out');
-}
-
 function doSearch(term){
   if(!term){showNotif('Type something to search'); return;}
   const t=term.toLowerCase(); const hits=[];
@@ -834,14 +835,10 @@ function afterRender(){
   if(page==='settings') wireSettings();
 }
 
-// Use Firebase auth state for boot flow
-auth.onAuthStateChanged(async (user) => {
+onAuthStateChanged(getAuth(), async (user) => {
   applyTheme();
   if (user) {
-    try {
-      await cloudLoadAll();
-    } catch {}
-    // hydrate session from local users list if possible
+    try { await cloudLoadAll(); } catch {}
     const users = load('users',[DEFAULT_ADMIN]);
     const prof = users.find(u => (u.email||'').toLowerCase() === (user.email||'').toLowerCase());
     session = prof ? {...prof} : { username: (user.email||'').split('@')[0], email:user.email||'', role:'user', name:'User' };
@@ -849,7 +846,6 @@ auth.onAuthStateChanged(async (user) => {
     renderApp();
     cloudSubscribe();
   } else {
-    // Fallback to previous local session if any (optional)
     session = load('session', null);
     if (session) { renderApp(); } else { renderLogin(); }
   }
