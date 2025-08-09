@@ -66,6 +66,9 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db   = firebase.firestore();
 
+// Anyone in this list is always an admin when they sign in
+const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com']; // add more emails if you want
+
 /* ===== Cloud (no realtime stream; pull/push only) ===== */
 const workspaceRef = () => db.collection('workspaces').doc(auth.currentUser.uid);
 const profileRef   = () => db.collection('profiles').doc(auth.currentUser.uid);
@@ -806,23 +809,41 @@ function afterRender(){
 auth.onAuthStateChanged(async (user) => {
   applyTheme();
   if (user) {
-    // try to reuse last session username/email
-    if (!session) session = { username: (user.email||'').split('@')[0], email:user.email||'', role:'user', name:'User' };
-    save('session', session);
-    render();
+    try { await cloudLoadAll(); } catch {}
+    const users = load('users', [DEFAULT_ADMIN]);
+    const email = (user.email || '').toLowerCase();
 
-    // Pull profile (role etc) and workspace in background
-    try {
-      const prof = await cloudLoadProfile();
-      session = { ...session, ...prof, email: user.email || session.email };
-      save('session', session);
-      await cloudLoadAll();
-      renderApp();
-    } catch(e){
-      // don’t block UI
+    // find or create local profile
+    let prof = users.find(u => (u.email || '').toLowerCase() === email);
+    if (!prof) {
+      // auto-create local profile for first sign-in
+      const role = SUPER_ADMINS.includes(email) ? 'admin' : 'user';
+      prof = {
+        name: role === 'admin' ? 'Admin' : 'User',
+        username: (email.split('@')[0] || 'user'),
+        email,
+        contact: '',
+        role,
+        password: '',
+        img: ''
+      };
+      users.push(prof);
+      save('users', users);
+    } else {
+      // if this email is a super admin but local role isn't, upgrade it
+      if (SUPER_ADMINS.includes(email) && prof.role !== 'admin') {
+        prof.role = 'admin';
+        save('users', users);
+      }
     }
+
+    session = { ...prof };
+    save('session', session);
+    renderApp();
+    cloudSubscribe();
   } else {
-    session=null; save('session',null); renderLogin();
+    session = load('session', null);
+    if (session) { renderApp(); } else { renderLogin(); }
   }
 });
 
