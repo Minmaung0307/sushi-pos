@@ -3,88 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#0ea5a5" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <title>Sushi POS</title>
 
   <link rel="stylesheet" href="styles.css" />
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.3.0/fonts/remixicon.css" rel="stylesheet" />
+
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
 </head>
 <body>
-  <!-- Toast -->
   <div id="notification" class="notification"></div>
 
-  <!-- Header -->
-  <header class="app-header">
-    <button id="navToggle" class="icon-btn" aria-label="Toggle menu">
-      <i class="ri-menu-line"></i>
-    </button>
-    <div class="brand">
-      <i class="ri-sushi-line"></i>
-      <span>Sushi POS</span>
-    </div>
-    <nav class="top-links">
-      <a href="#/page/policy"  class="link">Policy</a>
-      <a href="#/page/license" class="link">License</a>
-      <a href="#/page/setup"   class="link">Setup</a>
-      <a href="#/page/contact" class="link">Contact</a>
-      <div class="social">
-        <a href="https://youtube.com"   target="_blank" aria-label="YouTube"><i class="ri-youtube-fill"></i></a>
-        <a href="https://facebook.com"  target="_blank" aria-label="Facebook"><i class="ri-facebook-circle-fill"></i></a>
-        <a href="https://instagram.com" target="_blank" aria-label="Instagram"><i class="ri-instagram-line"></i></a>
-        <a href="https://tiktok.com"    target="_blank" aria-label="TikTok"><i class="ri-tiktok-fill"></i></a>
-        <a href="https://twitter.com"   target="_blank" aria-label="Twitter"><i class="ri-twitter-x-line"></i></a>
-      </div>
-    </nav>
-  </header>
+  <!-- App root -->
+  <div id="root"></div>
 
-  <!-- Layout -->
-  <div class="layout">
-    <!-- Sidebar -->
-    <aside id="sidebar" class="sidebar">
-      <div class="sidebar-inner">
-        <div class="userbox" id="userbox"></div>
-
-        <a href="#/dashboard" class="side-link"><i class="ri-dashboard-line"></i> <span>Dashboard</span></a>
-        <a href="#/inventory" class="side-link"><i class="ri-archive-2-line"></i> <span>Inventory</span></a>
-        <a href="#/products"  class="side-link"><i class="ri-restaurant-line"></i> <span>Products</span></a>
-        <a href="#/cogs"      class="side-link"><i class="ri-money-dollar-circle-line"></i> <span>COGS</span></a>
-        <a href="#/tasks"     class="side-link"><i class="ri-task-line"></i> <span>Tasks</span></a>
-        <a href="#/settings"  class="side-link"><i class="ri-settings-3-line"></i> <span>Settings</span></a>
-
-        <button id="logoutBtn" class="side-link danger"><i class="ri-logout-circle-r-line"></i> <span>Logout</span></button>
-      </div>
-    </aside>
-
-    <!-- Content -->
-    <main id="root" class="content"></main>
-  </div>
-
-  <!-- Global Modal -->
-  <div id="modal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop"></div>
-    <div class="modal-card" role="dialog" aria-modal="true">
-      <div class="modal-head">
-        <h3 id="modalTitle" class="modal-title"></h3>
-        <button id="modalClose" class="icon-btn"><i class="ri-close-line"></i></button>
-      </div>
-      <div id="modalBody" class="modal-body"></div>
-      <div class="modal-foot" id="modalFoot"></div>
-    </div>
-  </div>
-
-  <!-- Firebase (compat) -->
+  <!-- Firebase (Auth only) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
 
-  <!-- App -->
-  <script src="app.js"></script>
+  <!-- Main app -->
+  <script type="module" src="app.js"></script>
 
-  <!-- SW -->
+  <!-- Service worker -->
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(err => console.error('SW registration failed:', err));
