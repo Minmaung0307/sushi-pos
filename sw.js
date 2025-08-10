@@ -1,4 +1,4 @@
-// Sushi POS Service Worker (no POST caching, faster nav fallback)
+// Sushi POS Service Worker (no POST caching, no Firebase caching)
 
 const CACHE_NAME = 'sushi-pos-v3';
 const PRECACHE = [
@@ -35,8 +35,8 @@ const BYPASS = (url) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
 
-  if (req.method !== 'GET') return;              // <-- fix POST error
-  if (BYPASS(req.url)) return;                   // <-- skip Firebase streams
+  if (req.method !== 'GET') return;
+  if (BYPASS(req.url)) return;
 
   const url = new URL(req.url);
 

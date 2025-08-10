@@ -17,14 +17,13 @@ const notify = (msg, type='ok') => {
   n.className = `notification show ${type}`;
   setTimeout(()=> n.className='notification', 2200);
 };
-
 function save(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
 function load(key, fallback){ try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
 
 // --- Globals & Prefill --------------------------------------------------------
 const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com'];
 
-// Prefill on first run (localStorage only)
+// Prefill on first run (localStorage only) + add inventory.type
 (function seedOnFirstRun(){
   if (load('_seeded', false)) return;
   const now = Date.now();
@@ -35,16 +34,16 @@ const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com'];
     { name:'Cashier One', username:'cashier1', email:'cashier@sushi.com', contact:'', role:'user', password:'', img:'' },
   ];
   const inventory = [
-    { id:'inv1', img:'', name:'Nori Sheets', code:'NOR-100', price:3.00, stock:80, threshold:30 },
-    { id:'inv2', img:'', name:'Sushi Rice', code:'RIC-200', price:1.50, stock:24, threshold:20 },
-    { id:'inv3', img:'', name:'Fresh Salmon', code:'SAL-300', price:7.80, stock:10, threshold:12 },
+    { id:'inv1', img:'', name:'Nori Sheets', code:'NOR-100', type:'Dry',   price:3.00, stock:80, threshold:30 },
+    { id:'inv2', img:'', name:'Sushi Rice',  code:'RIC-200', type:'Dry',   price:1.50, stock:24, threshold:20 },
+    { id:'inv3', img:'', name:'Fresh Salmon',code:'SAL-300', type:'Raw',   price:7.80, stock:10, threshold:12 },
   ];
   const products = [
     { id:'p1', img:'', name:'Salmon Nigiri', barcode:'11100001', price:5.99, type:'Nigiri', ingredients:'Rice, Salmon', instructions:'Brush with nikiri.', card:true },
     { id:'p2', img:'', name:'California Roll', barcode:'11100002', price:7.49, type:'Roll', ingredients:'Rice, Nori, Crab, Avocado', instructions:'8 pcs.', card:true },
   ];
   const posts = [
-    { id:'post1', title:'Welcome to Sushi POS', body:'This is your dashboard. Create products, track stock, and sell faster.', img:'', createdAt: now }
+    { id:'post1', title:'Welcome to Sushi POS', body:'Create products, track stock, sell faster.', img:'', createdAt: now }
   ];
   const tasks = [
     { id:'t1', title:'Prep Salmon', status:'todo' },
@@ -52,8 +51,8 @@ const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com'];
     { id:'t3', title:'Sanitize Station', status:'done' },
   ];
   const cogs = [
-    { id:'c1', date:'2025-08-01', grossIncome: 1200.00, produceCost: 280.00, itemCost: 180.00, freight: 45.00, delivery: 30.00, other: 20.00 },
-    { id:'c2', date:'2025-08-02', grossIncome: 900.00,  produceCost: 220.00, itemCost: 140.00, freight: 30.00, delivery: 25.00, other: 10.00 }
+    { id:'c1', date:'2025-08-01', grossIncome: 1200, produceCost: 280, itemCost: 180, freight: 45, delivery: 30, other: 20 },
+    { id:'c2', date:'2025-08-02', grossIncome:  900, produceCost: 220, itemCost: 140, freight: 30, delivery: 25, other: 10 }
   ];
 
   save('users', users);
@@ -69,27 +68,43 @@ const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com'];
 let session = load('session', null);
 let currentRoute = load('_route', 'dashboard');
 
-const THEMES = [
-  { key:'light',  name:'Light',  class:'light', baseSize:100 },
-  { key:'dark',   name:'Dark',   class:'dark',  baseSize:100 },
-  { key:'aqua',   name:'Aqua',   class:'',      baseSize:100 }, // default
-  { key:'big',    name:'Big Text', class:'',    baseSize:112 },
+// Simpler theme controls (mode + font size)
+const THEME_MODES = [
+  { key:'light', name:'Light' },
+  { key:'dark',  name:'Dark'  },
+  { key:'aqua',  name:'Aqua'  } // default (same as “dark aqua”)
+];
+const THEME_SIZES = [
+  { key:'small',  pct: 90, label:'Small' },
+  { key:'medium', pct:100, label:'Medium' },
+  { key:'large',  pct:112, label:'Large' }
 ];
 
+function getTheme(){ return load('_theme2', { mode:'aqua', size:'medium' }); }
 function applyTheme(){
-  const t = load('_theme', { key:'aqua', class:'', baseSize:100 });
-  document.documentElement.setAttribute('data-theme', t.key==='light' ? 'light' : (t.key==='dark' ? 'dark' : ''));
-  document.documentElement.style.setProperty('--font-scale', t.baseSize + '%');
+  const t = getTheme();
+  const size = THEME_SIZES.find(s=>s.key===t.size)?.pct ?? 100;
+  document.documentElement.setAttribute('data-theme', t.mode==='light' ? 'light' : (t.mode==='dark' ? 'dark' : ''));
+  document.documentElement.style.setProperty('--font-scale', size + '%');
 }
-
 applyTheme();
 
 // --- Router helpers -----------------------------------------------------------
-function go(route){
-  currentRoute = route;
-  save('_route', route);
-  renderApp();
+function go(route){ currentRoute = route; save('_route', route); renderApp(); }
+
+// --- Idle auto-logout (10 minutes) -------------------------------------------
+let idleTimer = null;
+const IDLE_LIMIT = 10 * 60 * 1000;
+function resetIdleTimer(){
+  if (!session) return;
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(async () => {
+    try { await auth.signOut(); } finally { notify('Signed out due to inactivity','warn'); }
+  }, IDLE_LIMIT);
 }
+['click','mousemove','keydown','touchstart','scroll'].forEach(evt => {
+  window.addEventListener(evt, resetIdleTimer, { passive: true });
+});
 
 // --- Auth state ---------------------------------------------------------------
 auth.onAuthStateChanged(async (user) => {
@@ -105,11 +120,12 @@ auth.onAuthStateChanged(async (user) => {
     } else if (SUPER_ADMINS.includes(email) && prof.role!=='admin') {
       prof.role = 'admin'; save('users', users);
     }
-    session = { ...prof };
-    save('session', session);
+    session = { ...prof }; save('session', session);
+    resetIdleTimer();
     renderApp();
   } else {
     session = null; save('session', null);
+    if (idleTimer) clearTimeout(idleTimer);
     renderLogin();
   }
 });
@@ -143,16 +159,10 @@ function renderLogin() {
     try {
       await auth.signInWithEmailAndPassword(email, pass);
       notify('Welcome!');
-    } catch (e) {
-      notify(e.message || 'Login failed','danger');
-    }
+    } catch (e) { notify(e.message || 'Login failed','danger'); }
   };
 }
-
-async function doLogout(){
-  await auth.signOut();
-  notify('Signed out');
-}
+async function doLogout(){ await auth.signOut(); notify('Signed out'); }
 
 // --- Sidebar (with Global Search + Links + Socials) ---------------------------
 function renderSidebar(active='dashboard'){
@@ -164,14 +174,12 @@ function renderSidebar(active='dashboard'){
     { route:'tasks',     icon:'ri-list-check-2',   label:'Tasks' },
     { route:'settings',  icon:'ri-settings-3-line',label:'Settings' }
   ];
-
   const pages = [
     { route:'policy',  icon:'ri-shield-check-line', label:'Policy' },
     { route:'license', icon:'ri-copyright-line',    label:'License' },
     { route:'setup',   icon:'ri-guide-line',        label:'Setup Guide' },
     { route:'contact', icon:'ri-customer-service-2-line', label:'Contact' },
   ];
-
   return `
     <aside class="sidebar" id="sidebar">
       <div class="brand">
@@ -180,24 +188,24 @@ function renderSidebar(active='dashboard'){
       </div>
 
       <div class="search-wrap">
-        <input id="globalSearch" placeholder="Search everything…" />
+        <input id="globalSearch" placeholder="Search everything…" autocomplete="off" />
         <div id="searchResults" class="search-results"></div>
       </div>
 
       <h6>Menu</h6>
       <nav class="nav">
         ${links.map(l => `
-          <a class="item ${active===l.route?'active':''}" data-route="${l.route}">
+          <div class="item ${active===l.route?'active':''}" data-route="${l.route}">
             <i class="${l.icon}"></i> <span>${l.label}</span>
-          </a>`).join('')}
+          </div>`).join('')}
       </nav>
 
       <h6>Links</h6>
       <div class="links">
         ${pages.map(p => `
-          <a class="item" data-route="${p.route}">
+          <div class="item" data-route="${p.route}">
             <i class="${p.icon}"></i> <span>${p.label}</span>
-          </a>`).join('')}
+          </div>`).join('')}
       </div>
 
       <h6>Social</h6>
@@ -213,12 +221,9 @@ function renderSidebar(active='dashboard'){
 }
 
 function hookSidebarInteractions(){
-  // nav clicks
+  // nav clicks (close after click)
   $$('.sidebar .item').forEach(a => {
-    a.onclick = (e)=> {
-      const r = a.getAttribute('data-route');
-      if (r) { closeSidebar(); go(r); }
-    };
+    a.onclick = ()=> { const r = a.getAttribute('data-route'); if (r) { go(r); closeSidebar(); } };
   });
 
   // Global search
@@ -226,6 +231,11 @@ function hookSidebarInteractions(){
   const results = $('#searchResults');
   const indexData = buildSearchIndex();
   let searchTimer;
+
+  // Ensure input is focusable
+  input.removeAttribute('disabled');
+  input.style.pointerEvents = 'auto';
+  input.addEventListener('focus', ()=> results.classList.remove('active'));
 
   input.addEventListener('input', () => {
     clearTimeout(searchTimer);
@@ -248,6 +258,7 @@ function hookSidebarInteractions(){
           input.value = '';
           go(route);
           if (id) setTimeout(()=> scrollToRow(id), 50);
+          closeSidebar();
         };
       });
     }, 120);
@@ -267,21 +278,17 @@ function buildSearchIndex(){
   const posts = load('posts', []);
   const tasks = load('tasks', []);
   const cogs = load('cogs', []);
-
   const index = [];
-  inventory.forEach(x => index.push({section:'Inventory', route:'inventory', id:x.id, label:`${x.name} (${x.code})`, haystack:`${x.name} ${x.code}`.toLowerCase()}));
+  inventory.forEach(x => index.push({section:'Inventory', route:'inventory', id:x.id, label:`${x.name} (${x.code})`, haystack:`${x.name} ${x.code} ${x.type}`.toLowerCase()}));
   products.forEach(x => index.push({section:'Products', route:'products', id:x.id, label:`${x.name} ($${x.price.toFixed(2)})`, haystack:`${x.name} ${x.barcode} ${x.ingredients} ${x.type}`.toLowerCase()}));
   users.forEach(x => index.push({section:'Users', route:'settings', id:x.email, label:`${x.name} – ${x.role}`, haystack:`${x.name} ${x.username} ${x.email} ${x.role}`.toLowerCase()}));
   posts.forEach(x => index.push({section:'Posts', route:'dashboard', id:x.id, label:x.title, haystack:`${x.title} ${x.body}`.toLowerCase()}));
   tasks.forEach(x => index.push({section:'Tasks', route:'tasks', id:x.id, label:`${x.title} (${x.status})`, haystack:`${x.title} ${x.status}`.toLowerCase()}));
-  cogs.forEach(x => index.push({section:'COGS', route:'cogs', id:x.id, label:`COGS ${x.date}`, haystack:`${x.date} ${x.grossIncome} ${x.grossProfit}`.toLowerCase()}));
+  cogs.forEach(x => index.push({section:'COGS', route:'cogs', id:x.id, label:`COGS ${x.date}`, haystack:`${x.date}`.toLowerCase()}));
   return index;
 }
 function searchAll(index, q){ return index.filter(i => i.haystack.includes(q)); }
-function scrollToRow(id){
-  const el = document.getElementById(id);
-  if (el) el.scrollIntoView({behavior:'smooth', block:'center'});
-}
+function scrollToRow(id){ const el = document.getElementById(id); if (el) el.scrollIntoView({behavior:'smooth', block:'center'}); }
 
 // --- Header / Burger ----------------------------------------------------------
 function renderTopbar(){
@@ -303,7 +310,6 @@ function openSidebar(){ $('#sidebar')?.classList.add('open'); $('#backdrop')?.cl
 function closeSidebar(){ $('#sidebar')?.classList.remove('open'); $('#backdrop')?.classList.remove('active'); }
 
 // --- View renderers -----------------------------------------------------------
-// Currency
 const USD = x => `$${Number(x||0).toFixed(2)}`;
 
 // Dashboard
@@ -327,15 +333,15 @@ function viewDashboard(){
           <h3 style="margin:0">Posts</h3>
           ${canCreate() ? `<button class="btn" id="addPost"><i class="ri-add-line"></i> New Post</button>` : ''}
         </div>
-        <div class="grid">
+        <div class="grid" data-section="posts">
           ${posts.map(p => `
             <div class="card" id="${p.id}">
               <div class="card-body">
                 <div style="display:flex;justify-content:space-between;align-items:center">
                   <div><strong>${p.title}</strong><div style="color:var(--muted);font-size:12px">${new Date(p.createdAt).toLocaleString()}</div></div>
                   <div>
-                    <button class="btn ghost" data-edit-post="${p.id}"><i class="ri-edit-line"></i></button>
-                    <button class="btn danger" data-del-post="${p.id}"><i class="ri-delete-bin-6-line"></i></button>
+                    <button class="btn ghost" data-edit="${p.id}"><i class="ri-edit-line"></i></button>
+                    <button class="btn danger" data-del="${p.id}"><i class="ri-delete-bin-6-line"></i></button>
                   </div>
                 </div>
                 ${p.img?`<img src="${p.img}" style="width:100%;border-radius:12px;margin-top:10px;border:1px solid var(--card-border)"/>`:''}
@@ -350,7 +356,7 @@ function viewDashboard(){
   `;
 }
 
-// Inventory
+// Inventory (added Type column + big hover)
 function viewInventory(){
   const items = load('inventory', []);
   return `
@@ -360,18 +366,24 @@ function viewInventory(){
           <h3 style="margin:0">Inventory</h3>
           ${canCreate() ? `<button class="btn" id="addInv"><i class="ri-add-line"></i> Add Item</button>` : ''}
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap" data-section="inventory">
           <table class="table">
             <thead><tr>
-              <th>Image</th><th>Name</th><th>Code</th><th>Price</th><th>Stock</th><th>Threshold</th><th>Actions</th>
+              <th>Image</th><th>Name</th><th>Code</th><th>Type</th><th>Price</th><th>Stock</th><th>Threshold</th><th>Actions</th>
             </tr></thead>
             <tbody>
               ${items.map(it => {
                 const warnClass = it.stock <= it.threshold ? (it.stock <= Math.max(1, Math.floor(it.threshold*0.6)) ? 'tr-danger' : 'tr-warn') : '';
                 return `<tr id="${it.id}" class="${warnClass}">
-                  <td>${it.img?`<img class="thumb" src="${it.img}"/>`:`<div class="thumb" style="display:grid;place-items:center">🍙</div>`}</td>
+                  <td>
+                    <div class="thumb-wrap">
+                      ${it.img?`<img class="thumb" src="${it.img}" alt=""/>`:`<div class="thumb" style="display:grid;place-items:center">🍙</div>`}
+                      <img class="thumb-large" src="${it.img||'icons/icon-512.png'}" alt=""/>
+                    </div>
+                  </td>
                   <td>${it.name}</td>
                   <td>${it.code}</td>
+                  <td>${it.type||'-'}</td>
                   <td>${USD(it.price)}</td>
                   <td>
                     <button class="btn ghost" data-dec="${it.id}">–</button>
@@ -384,8 +396,10 @@ function viewInventory(){
                     <button class="btn ghost" data-inc-th="${it.id}">+</button>
                   </td>
                   <td>
-                    <button class="btn ghost" data-edit="${it.id}"><i class="ri-edit-line"></i></button>
-                    <button class="btn danger" data-del="${it.id}"><i class="ri-delete-bin-6-line"></i></button>
+                    ${canCreate() ? `
+                      <button class="btn ghost" data-edit="${it.id}"><i class="ri-edit-line"></i></button>
+                      <button class="btn danger" data-del="${it.id}"><i class="ri-delete-bin-6-line"></i></button>` : ''
+                    }
                   </td>
                 </tr>`;
               }).join('')}
@@ -398,7 +412,7 @@ function viewInventory(){
   `;
 }
 
-// Products
+// Products (image hover + click image opens card; name is plain text)
 function viewProducts(){
   const items = load('products', []);
   return `
@@ -408,7 +422,7 @@ function viewProducts(){
           <h3 style="margin:0">Products</h3>
           ${canCreate() ? `<button class="btn" id="addProd"><i class="ri-add-line"></i> Add Product</button>` : ''}
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap" data-section="products">
           <table class="table">
             <thead><tr>
               <th>Image</th><th>Name</th><th>Barcode</th><th>Price</th><th>Type</th><th>Actions</th>
@@ -416,14 +430,21 @@ function viewProducts(){
             <tbody>
               ${items.map(it => `
                 <tr id="${it.id}">
-                  <td>${it.img?`<img class="thumb" src="${it.img}"/>`:`<div class="thumb" style="display:grid;place-items:center">🍤</div>`}</td>
-                  <td><a href="#" data-card="${it.id}">${it.name}</a></td>
+                  <td>
+                    <div class="thumb-wrap">
+                      ${it.img?`<img class="thumb prod-thumb" data-card="${it.id}" src="${it.img}" alt=""/>`:`<div class="thumb prod-thumb" data-card="${it.id}" style="display:grid;place-items:center;cursor:pointer">🍤</div>`}
+                      <img class="thumb-large" src="${it.img||'icons/icon-512.png'}" alt=""/>
+                    </div>
+                  </td>
+                  <td>${it.name}</td>
                   <td>${it.barcode}</td>
                   <td>${USD(it.price)}</td>
                   <td>${it.type||'-'}</td>
                   <td>
-                    <button class="btn ghost" data-edit="${it.id}"><i class="ri-edit-line"></i></button>
-                    <button class="btn danger" data-del="${it.id}"><i class="ri-delete-bin-6-line"></i></button>
+                    ${canCreate() ? `
+                      <button class="btn ghost" data-edit="${it.id}"><i class="ri-edit-line"></i></button>
+                      <button class="btn danger" data-del="${it.id}"><i class="ri-delete-bin-6-line"></i></button>` : ''
+                    }
                   </td>
                 </tr>`).join('')}
             </tbody>
@@ -457,7 +478,7 @@ function viewCOGS(){
           <h3 style="margin:0">COGS</h3>
           ${canCreate() ? `<button class="btn" id="addCOGS"><i class="ri-add-line"></i> Add Row</button>` : ''}
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap" data-section="cogs">
           <table class="table">
             <thead><tr>
               <th>Date</th><th>Gross Income</th><th>Produce Cost</th><th>Item Cost</th>
@@ -475,8 +496,10 @@ function viewCOGS(){
                   <td>${USD(r.other)}</td>
                   <td>${USD(grossProfit(r))}</td>
                   <td>
-                    <button class="btn ghost" data-edit="${r.id}"><i class="ri-edit-line"></i></button>
-                    <button class="btn danger" data-del="${r.id}"><i class="ri-delete-bin-6-line"></i></button>
+                    ${canCreate() ? `
+                      <button class="btn ghost" data-edit="${r.id}"><i class="ri-edit-line"></i></button>
+                      <button class="btn danger" data-del="${r.id}"><i class="ri-delete-bin-6-line"></i></button>` : ''
+                    }
                   </td>
                 </tr>`).join('')}
               <tr>
@@ -499,29 +522,26 @@ function viewCOGS(){
   `;
 }
 
-// Tasks (simple lanes)
+// Tasks – rows with drag & drop
 function viewTasks(){
   const items = load('tasks', []);
   const lane = (key, label)=>`
-    <div class="card">
+    <div class="card" data-lane="${key}">
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <h3 style="margin:0">${label}</h3>
           ${key==='todo' && canCreate()? `<button class="btn" id="addTask"><i class="ri-add-line"></i> Add Task</button>`:''}
         </div>
-        <div class="grid">
+        <div class="grid" id="lane-${key}">
           ${items.filter(t=>t.status===key).map(t=>`
-            <div class="card" id="${t.id}">
+            <div class="card" id="${t.id}" draggable="true" data-task="${t.id}">
               <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
                 <div>${t.title}</div>
                 <div>
-                  <select data-move="${t.id}">
-                    <option value="todo" ${t.status==='todo'?'selected':''}>To do</option>
-                    <option value="inprogress" ${t.status==='inprogress'?'selected':''}>In progress</option>
-                    <option value="done" ${t.status==='done'?'selected':''}>Done</option>
-                  </select>
-                  <button class="btn ghost" data-edit="${t.id}"><i class="ri-edit-line"></i></button>
-                  <button class="btn danger" data-del="${t.id}"><i class="ri-delete-bin-6-line"></i></button>
+                  ${canCreate() ? `
+                    <button class="btn ghost" data-edit="${t.id}"><i class="ri-edit-line"></i></button>
+                    <button class="btn danger" data-del="${t.id}"><i class="ri-delete-bin-6-line"></i></button>` : ''
+                  }
                 </div>
               </div>
             </div>`).join('')}
@@ -530,7 +550,7 @@ function viewTasks(){
     </div>
   `;
   return `
-    <div class="grid cols-3">
+    <div class="grid cols-3" data-section="tasks">
       ${lane('todo','To do')}
       ${lane('inprogress','In progress')}
       ${lane('done','Done')}
@@ -539,20 +559,39 @@ function viewTasks(){
   `;
 }
 
-// Settings (Users + Theme)
+// Settings (Theme dropdowns above Users)
 function viewSettings(){
   const users = load('users', []);
-  const theme = load('_theme', THEMES[2]);
-
+  const theme = getTheme();
   return `
     <div class="grid cols-2">
+      <div class="card">
+        <div class="card-body">
+          <h3 style="margin-top:0">Theme</h3>
+          <div class="theme-inline">
+            <div>
+              <label style="font-size:12px;color:var(--muted)">Mode</label>
+              <select id="theme-mode" class="input">
+                ${THEME_MODES.map(m=>`<option value="${m.key}" ${theme.mode===m.key?'selected':''}>${m.name}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--muted)">Font Size</label>
+              <select id="theme-size" class="input">
+                ${THEME_SIZES.map(s=>`<option value="${s.key}" ${theme.size===s.key?'selected':''}>${s.label}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-body">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
             <h3 style="margin:0">Users</h3>
             ${canManage()? `<button class="btn" id="addUser"><i class="ri-add-line"></i> Add User</button>`:''}
           </div>
-          <table class="table">
+          <table class="table" data-section="users">
             <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr></thead>
             <tbody>
               ${users.map(u=>`
@@ -561,31 +600,14 @@ function viewSettings(){
                   <td>${u.email}</td>
                   <td>${u.role}</td>
                   <td>
-                    <button class="btn ghost" data-edit="${u.email}"><i class="ri-edit-line"></i></button>
-                    <button class="btn danger" data-del="${u.email}"><i class="ri-delete-bin-6-line"></i></button>
+                    ${canManage()? `
+                      <button class="btn ghost" data-edit="${u.email}"><i class="ri-edit-line"></i></button>
+                      <button class="btn danger" data-del="${u.email}"><i class="ri-delete-bin-6-line"></i></button>` : ''
+                    }
                   </td>
                 </tr>`).join('')}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-body">
-          <h3 style="margin-top:0">Theme</h3>
-          <div class="theme-presets">
-            ${THEMES.map(t=>`
-              <div class="theme-card">
-                <div class="preview"></div>
-                <div class="meta">
-                  <div class="name">${t.name}</div>
-                  <div class="size">${t.baseSize}%</div>
-                </div>
-                <div style="padding:0 12px 12px">
-                  <button class="btn secondary" data-theme="${t.key}">Use ${t.name}</button>
-                </div>
-              </div>`).join('')}
-          </div>
         </div>
       </div>
     </div>
@@ -597,21 +619,17 @@ function viewSettings(){
 // Static pages
 const pageContent = {
   policy: `<h3>Policy</h3><p>Our basic privacy and data usage policy for Sushi POS.</p>`,
-  license:`<h3>License</h3><p>This app is provided under a permissive license for your restaurant use.</p>`,
-  setup:  `<h3>Setup Guide</h3><ol><li>Create Firebase Auth users.</li><li>Sign in as admin/manager.</li><li>Use Settings to tune roles and Theme.</li></ol>`,
-  contact:`<h3>Contact</h3><p>Questions? Email us at support@sushipos.example</p>`
+  license:`<h3>License</h3><p>Permissive license for your restaurant use.</p>`,
+  setup:  `<h3>Setup Guide</h3><ol><li>Create Firebase Auth users.</li><li>Sign in as admin/manager.</li><li>Use Settings to set roles & theme.</li></ol>`,
+  contact:`<h3>Contact</h3><p>Email support@sushipos.example</p>`
 };
-function viewPage(key){
-  return `<div class="card"><div class="card-body">${pageContent[key]||'<p>Page</p>'}</div></div>`;
-}
+function viewPage(key){ return `<div class="card"><div class="card-body">${pageContent[key]||'<p>Page</p>'}</div></div>`; }
 
 // --- Permission helpers -------------------------------------------------------
 function canManage(){ return session && (session.role==='admin' || session.role==='manager'); }
 function canCreate(){ return session && (session.role==='admin' || session.role==='manager'); }
 
-// --- Modals (posts/inventory/products/tasks/users/cogs) ----------------------
-// For brevity, modals are simple; all forms are modal-based (no alerts).
-
+// --- Modals -------------------------------------------------------------------
 function postModal(){
   if (!canCreate()) return '';
   return `
@@ -620,6 +638,7 @@ function postModal(){
     <div class="dialog">
       <div class="head"><strong>Post</strong><button class="btn ghost" data-close="m-post">Close</button></div>
       <div class="body grid">
+        <input id="post-id" type="hidden" />
         <input id="post-title" class="input" placeholder="Title" />
         <textarea id="post-body" class="input" placeholder="Body"></textarea>
         <input id="post-img" class="input" placeholder="Image URL (optional)" />
@@ -628,7 +647,6 @@ function postModal(){
     </div>
   </div>`;
 }
-
 function invModal(){
   if (!canCreate()) return '';
   return `
@@ -640,6 +658,9 @@ function invModal(){
         <input id="inv-id" type="hidden" />
         <input id="inv-name" class="input" placeholder="Name" />
         <input id="inv-code" class="input" placeholder="Code" />
+        <select id="inv-type" class="input">
+          <option>Raw</option><option>Cooked</option><option>Dry</option><option>Other</option>
+        </select>
         <input id="inv-price" class="input" type="number" step="0.01" placeholder="Price" />
         <input id="inv-stock" class="input" type="number" placeholder="Stock" />
         <input id="inv-threshold" class="input" type="number" placeholder="Threshold" />
@@ -649,7 +670,6 @@ function invModal(){
     </div>
   </div>`;
 }
-
 function prodModal(){
   if (!canCreate()) return '';
   return `
@@ -671,7 +691,6 @@ function prodModal(){
     </div>
   </div>`;
 }
-
 function prodCardModal(){
   return `
   <div class="modal-backdrop" id="mb-card"></div>
@@ -691,7 +710,6 @@ function prodCardModal(){
     </div>
   </div>`;
 }
-
 function cogsModal(){
   if (!canCreate()) return '';
   return `
@@ -713,7 +731,6 @@ function cogsModal(){
     </div>
   </div>`;
 }
-
 function taskModal(){
   if (!canCreate()) return '';
   return `
@@ -734,7 +751,6 @@ function taskModal(){
     </div>
   </div>`;
 }
-
 function userModal(){
   if (!canManage()) return '';
   return `
@@ -782,188 +798,186 @@ function renderApp(){
 
   hookSidebarInteractions();
 
-  // Burger / back home / logout
-  $('#burger')?.addEventListener('click', openSidebar);
-  $('#backdrop')?.addEventListener('click', closeSidebar);
+  // Burger / backdrop / home / logout
+  $('#burger')?.addEventListener('click', openSidebar, { passive:true });
+  $('#backdrop')?.addEventListener('click', closeSidebar, { passive:true });
   $('#btnHome')?.addEventListener('click', ()=> go('dashboard'));
   $('#btnLogout')?.addEventListener('click', doLogout);
 
-  // Dashboard actions
-  $$('.tile').forEach(t=>{
-    t.onclick = ()=> { const r=t.getAttribute('data-go'); if (r) go(r); };
+  // Dashboard tiles click-through
+  $$('.tile').forEach(t=>{ t.onclick = ()=> { const r=t.getAttribute('data-go'); if (r) go(r); }; });
+
+  // Wire section handlers with event delegation (edit/delete work everywhere)
+  wirePosts();
+  wireInventory();
+  wireProducts();
+  wireCOGS();
+  wireTasks();
+  wireUsers();
+  wireTheme();
+  wireProductCardClicks();
+  setupDnD();
+  
+  // Close modal buttons
+  $$('[data-close]').forEach(b=> b.onclick = ()=> closeModal(b.getAttribute('data-close')));
+}
+
+function openModal(id){ $('#'+id)?.classList.add('active'); $('#mb-'+id.split('-')[1])?.classList.add('active'); }
+function closeModal(id){ $('#'+id)?.classList.remove('active'); $('#mb-'+id.split('-')[1])?.classList.remove('active'); }
+
+// --- Section wiring -----------------------------------------------------------
+// Posts
+function wirePosts(){
+  if ($('#addPost')) $('#addPost').onclick = ()=> openModal('m-post');
+  const sec = $('[data-section="posts"]'); if (!sec) return;
+
+  $('#save-post')?.addEventListener('click', ()=>{
+    const posts = load('posts', []);
+    const id = $('#post-id').value || ('post_'+Date.now());
+    const obj = {
+      id,
+      title: $('#post-title').value.trim(),
+      body: $('#post-body').value.trim(),
+      img: $('#post-img').value.trim(),
+      createdAt: Date.now()
+    };
+    if (!obj.title) return notify('Title required','warn');
+    const i = posts.findIndex(x=>x.id===id);
+    if (i>=0) posts[i]=obj; else posts.unshift(obj);
+    save('posts', posts); closeModal('m-post'); notify('Saved'); renderApp();
   });
 
-  // Posts
-  if ($('#addPost')) {
-    $('#addPost').onclick = ()=> openModal('m-post');
-  }
-  $$('#save-post').forEach(btn=>{
-    btn.onclick = ()=>{
-      const posts = load('posts', []);
-      const obj = {
-        id:'post_'+Date.now(),
-        title: $('#post-title').value.trim(),
-        body: $('#post-body').value.trim(),
-        img: $('#post-img').value.trim(),
-        createdAt: Date.now()
-      };
-      if (!obj.title) return notify('Title required','warn');
-      posts.unshift(obj); save('posts', posts);
-      notify('Post saved'); closeModal('m-post'); renderApp();
-    };
-  });
-  $$('[data-edit-post]').forEach(b=>{
-    b.onclick = ()=>{
-      const id = b.getAttribute('data-edit-post');
+  sec.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if (!btn) return;
+    const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
+    if (btn.hasAttribute('data-edit')) {
       const posts = load('posts', []);
       const p = posts.find(x=>x.id===id); if (!p) return;
       openModal('m-post');
+      $('#post-id').value = p.id;
       $('#post-title').value = p.title;
       $('#post-body').value = p.body;
       $('#post-img').value = p.img||'';
-      $('#save-post').onclick = ()=>{
-        p.title = $('#post-title').value.trim();
-        p.body = $('#post-body').value.trim();
-        p.img = $('#post-img').value.trim();
-        save('posts', posts); notify('Updated'); closeModal('m-post'); renderApp();
-      };
-    };
-  });
-  $$('[data-del-post]').forEach(b=>{
-    b.onclick = ()=>{
-      const id=b.getAttribute('data-del-post');
+    } else {
       let posts = load('posts', []).filter(x=>x.id!==id);
       save('posts', posts); notify('Deleted'); renderApp();
-    };
+    }
   });
+}
 
-  // Inventory
+// Inventory
+function wireInventory(){
   if ($('#addInv')) $('#addInv').onclick = ()=> openModal('m-inv');
-  $$('#save-inv').forEach(btn=>{
-    btn.onclick = ()=>{
-      const items = load('inventory', []);
-      const id = $('#inv-id').value || ('inv_'+Date.now());
-      const obj = {
-        id,
-        name: $('#inv-name').value.trim(),
-        code: $('#inv-code').value.trim(),
-        price: parseFloat($('#inv-price').value||'0'),
-        stock: parseInt($('#inv-stock').value||'0'),
-        threshold: parseInt($('#inv-threshold').value||'0'),
-        img: $('#inv-img').value.trim(),
-      };
-      if (!obj.name) return notify('Name required','warn');
-      const i = items.findIndex(x=>x.id===id);
-      if (i>=0) items[i]=obj; else items.push(obj);
-      save('inventory', items); notify('Saved'); closeModal('m-inv'); renderApp();
+  const sec = $('[data-section="inventory"]'); if (!sec) return;
+
+  $('#save-inv')?.addEventListener('click', ()=>{
+    const items = load('inventory', []);
+    const id = $('#inv-id').value || ('inv_'+Date.now());
+    const obj = {
+      id,
+      name: $('#inv-name').value.trim(),
+      code: $('#inv-code').value.trim(),
+      type: $('#inv-type').value.trim(),
+      price: parseFloat($('#inv-price').value||'0'),
+      stock: parseInt($('#inv-stock').value||'0'),
+      threshold: parseInt($('#inv-threshold').value||'0'),
+      img: $('#inv-img').value.trim(),
     };
-  });
-  $$('[data-edit]').forEach(b=>{
-    const id=b.getAttribute('data-edit');
-    if (b.closest('table')?.closest('.card')?.textContent.includes('Inventory')) {
-      b.onclick = ()=>{
-        const items = load('inventory', []);
-        const it = items.find(x=>x.id===id); if (!it) return;
-        openModal('m-inv');
-        $('#inv-id').value=id; $('#inv-name').value=it.name; $('#inv-code').value=it.code;
-        $('#inv-price').value=it.price; $('#inv-stock').value=it.stock;
-        $('#inv-threshold').value=it.threshold; $('#inv-img').value=it.img||'';
-      };
-    }
-  });
-  $$('[data-del]').forEach(b=>{
-    const id=b.getAttribute('data-del');
-    if (b.closest('table')?.closest('.card')?.textContent.includes('Inventory')) {
-      b.onclick = ()=>{
-        let items = load('inventory', []).filter(x=>x.id!==id);
-        save('inventory', items); notify('Deleted'); renderApp();
-      };
-    }
-  });
-  $$('[data-inc]').forEach(b=>{
-    b.onclick = ()=>{
-      const id=b.getAttribute('data-inc');
-      const items = load('inventory', []);
-      const it = items.find(x=>x.id===id); if (!it) return;
-      it.stock++; save('inventory', items); renderApp();
-    };
-  });
-  $$('[data-dec]').forEach(b=>{
-    b.onclick = ()=>{
-      const id=b.getAttribute('data-dec');
-      const items = load('inventory', []);
-      const it = items.find(x=>x.id===id); if (!it) return;
-      it.stock=Math.max(0,it.stock-1); save('inventory', items); renderApp();
-    };
-  });
-  $$('[data-inc-th]').forEach(b=>{
-    b.onclick = ()=>{
-      const id=b.getAttribute('data-inc-th');
-      const items = load('inventory', []);
-      const it = items.find(x=>x.id===id); if (!it) return;
-      it.threshold++; save('inventory', items); renderApp();
-    };
-  });
-  $$('[data-dec-th]').forEach(b=>{
-    b.onclick = ()=>{
-      const id=b.getAttribute('data-dec-th');
-      const items = load('inventory', []);
-      const it = items.find(x=>x.id===id); if (!it) return;
-      it.threshold=Math.max(0,it.threshold-1); save('inventory', items); renderApp();
-    };
+    if (!obj.name) return notify('Name required','warn');
+    const i = items.findIndex(x=>x.id===id);
+    if (i>=0) items[i]=obj; else items.push(obj);
+    save('inventory', items); closeModal('m-inv'); notify('Saved'); renderApp();
   });
 
-  // Products
-  if ($('#addProd')) $('#addProd').onclick = ()=> openModal('m-prod');
-  $$('#save-prod').forEach(btn=>{
-    btn.onclick = ()=>{
-      const items = load('products', []);
-      const id = $('#prod-id').value || ('p_'+Date.now());
-      const obj = {
-        id,
-        name: $('#prod-name').value.trim(),
-        barcode: $('#prod-barcode').value.trim(),
-        price: parseFloat($('#prod-price').value||'0'),
-        type: $('#prod-type').value.trim(),
-        ingredients: $('#prod-ingredients').value.trim(),
-        instructions: $('#prod-instructions').value.trim(),
-        img: $('#prod-img').value.trim()
-      };
-      if (!obj.name) return notify('Name required','warn');
-      const i = items.findIndex(x=>x.id===id);
-      if (i>=0) items[i]=obj; else items.push(obj);
-      save('products', items); notify('Saved'); closeModal('m-prod'); renderApp();
-    };
+  sec.addEventListener('click', (e)=>{
+    const t = e.target;
+    const btn = t.closest('button');
+    if (btn && btn.hasAttribute('data-edit')) {
+      const id = btn.getAttribute('data-edit');
+      const items = load('inventory', []);
+      const it = items.find(x=>x.id===id); if (!it) return;
+      openModal('m-inv');
+      $('#inv-id').value=id; $('#inv-name').value=it.name; $('#inv-code').value=it.code;
+      $('#inv-type').value=it.type||'Other';
+      $('#inv-price').value=it.price; $('#inv-stock').value=it.stock;
+      $('#inv-threshold').value=it.threshold; $('#inv-img').value=it.img||'';
+      return;
+    }
+    if (btn && btn.hasAttribute('data-del')) {
+      const id = btn.getAttribute('data-del');
+      let items = load('inventory', []).filter(x=>x.id!==id);
+      save('inventory', items); notify('Deleted'); renderApp();
+      return;
+    }
+    if (btn && btn.hasAttribute('data-inc')) {
+      const id = btn.getAttribute('data-inc');
+      const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
+      it.stock++; save('inventory', items); renderApp(); return;
+    }
+    if (btn && btn.hasAttribute('data-dec')) {
+      const id = btn.getAttribute('data-dec');
+      const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
+      it.stock=Math.max(0,it.stock-1); save('inventory', items); renderApp(); return;
+    }
+    if (btn && btn.hasAttribute('data-inc-th')) {
+      const id = btn.getAttribute('data-inc-th');
+      const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
+      it.threshold++; save('inventory', items); renderApp(); return;
+    }
+    if (btn && btn.hasAttribute('data-dec-th')) {
+      const id = btn.getAttribute('data-dec-th');
+      const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
+      it.threshold=Math.max(0,it.threshold-1); save('inventory', items); renderApp(); return;
+    }
   });
-  // Edit/Delete within products table
-  $$('table .btn.ghost[data-edit]').forEach(b=>{
-    if (b.closest('table')?.closest('.card')?.textContent.includes('Products')) {
-      b.onclick = ()=>{
-        const id=b.getAttribute('data-edit');
-        const items = load('products', []);
-        const it = items.find(x=>x.id===id); if (!it) return;
+}
+
+// Products
+function wireProducts(){
+  if ($('#addProd')) $('#addProd').onclick = ()=> openModal('m-prod');
+  const sec = $('[data-section="products"]'); if (!sec) return;
+
+  $('#save-prod')?.addEventListener('click', ()=>{
+    const items = load('products', []);
+    const id = $('#prod-id').value || ('p_'+Date.now());
+    const obj = {
+      id,
+      name: $('#prod-name').value.trim(),
+      barcode: $('#prod-barcode').value.trim(),
+      price: parseFloat($('#prod-price').value||'0'),
+      type: $('#prod-type').value.trim(),
+      ingredients: $('#prod-ingredients').value.trim(),
+      instructions: $('#prod-instructions').value.trim(),
+      img: $('#prod-img').value.trim()
+    };
+    if (!obj.name) return notify('Name required','warn');
+    const i = items.findIndex(x=>x.id===id);
+    if (i>=0) items[i]=obj; else items.push(obj);
+    save('products', items); closeModal('m-prod'); notify('Saved'); renderApp();
+  });
+
+  sec.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if (btn) {
+      const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
+      if (btn.hasAttribute('data-edit')) {
+        const items = load('products', []); const it = items.find(x=>x.id===id); if (!it) return;
         openModal('m-prod');
         $('#prod-id').value=id; $('#prod-name').value=it.name; $('#prod-barcode').value=it.barcode;
         $('#prod-price').value=it.price; $('#prod-type').value=it.type;
-        $('#prod-ingredients').value=it.ingredients; $('#prod-instructions').value=it.instructions;
-        $('#prod-img').value=it.img||'';
-      };
-    }
-  });
-  $$('table .btn.danger[data-del]').forEach(b=>{
-    if (b.closest('table')?.closest('.card')?.textContent.includes('Products')) {
-      b.onclick = ()=>{
-        const id=b.getAttribute('data-del');
+        $('#prod-ingredients').value=it.ingredients; $('#prod-instructions').value=it.instructions; $('#prod-img').value=it.img||'';
+      } else {
         let items = load('products', []).filter(x=>x.id!==id);
         save('products', items); notify('Deleted'); renderApp();
-      };
+      }
     }
   });
-  // Product card
-  $$('[data-card]').forEach(a=>{
-    a.onclick = (e)=>{
-      e.preventDefault();
-      const id = a.getAttribute('data-card');
+}
+
+function wireProductCardClicks(){
+  $$('.prod-thumb').forEach(el=>{
+    el.style.cursor = 'pointer';
+    el.onclick = ()=>{
+      const id = el.getAttribute('data-card');
       const items = load('products', []);
       const it = items.find(x=>x.id===id); if (!it) return;
       $('#pc-name').textContent = it.name;
@@ -976,156 +990,143 @@ function renderApp(){
       openModal('m-card');
     };
   });
-
-  // COGS
-  if ($('#addCOGS')) $('#addCOGS').onclick = ()=> openModal('m-cogs');
-  if ($('#save-cogs')) {
-    $('#save-cogs').onclick = ()=>{
-      const rows = load('cogs', []);
-      const id = $('#cogs-id').value || ('c_'+Date.now());
-      const row = {
-        id,
-        date: $('#cogs-date').value || new Date().toISOString().slice(0,10),
-        grossIncome: parseFloat($('#cogs-grossIncome').value||'0'),
-        produceCost: parseFloat($('#cogs-produceCost').value||'0'),
-        itemCost: parseFloat($('#cogs-itemCost').value||'0'),
-        freight: parseFloat($('#cogs-freight').value||'0'),
-        delivery: parseFloat($('#cogs-delivery').value||'0'),
-        other: parseFloat($('#cogs-other').value||'0'),
-      };
-      const i = rows.findIndex(x=>x.id===id);
-      if (i>=0) rows[i]=row; else rows.push(row);
-      save('cogs', rows); notify('Saved'); closeModal('m-cogs'); renderApp();
-    };
-  }
-  // COGS table edit/del
-  $$('table .btn.ghost[data-edit]').forEach(b=>{
-    if (b.closest('table')?.closest('.card')?.textContent.includes('COGS')) {
-      b.onclick = ()=>{
-        const id=b.getAttribute('data-edit');
-        const rows = load('cogs', []);
-        const r = rows.find(x=>x.id===id); if (!r) return;
-        openModal('m-cogs');
-        $('#cogs-id').value=id; $('#cogs-date').value=r.date;
-        $('#cogs-grossIncome').value=r.grossIncome; $('#cogs-produceCost').value=r.produceCost;
-        $('#cogs-itemCost').value=r.itemCost; $('#cogs-freight').value=r.freight;
-        $('#cogs-delivery').value=r.delivery; $('#cogs-other').value=r.other;
-      };
-    }
-  });
-  $$('table .btn.danger[data-del]').forEach(b=>{
-    if (b.closest('table')?.closest('.card')?.textContent.includes('COGS')) {
-      b.onclick = ()=>{
-        const id=b.getAttribute('data-del');
-        let rows = load('cogs', []).filter(x=>x.id!==id);
-        save('cogs', rows); notify('Deleted'); renderApp();
-      };
-    }
-  });
-
-  // Tasks
-  if ($('#addTask')) $('#addTask').onclick = ()=> openModal('m-task');
-  if ($('#save-task')) {
-    $('#save-task').onclick = ()=>{
-      const items = load('tasks', []);
-      const id = $('#task-id').value || ('t_'+Date.now());
-      const obj = { id, title: $('#task-title').value.trim(), status: $('#task-status').value };
-      const i = items.findIndex(x=>x.id===id);
-      if (i>=0) items[i]=obj; else items.push(obj);
-      save('tasks',items); notify('Saved'); closeModal('m-task'); renderApp();
-    };
-  }
-  $$('select[data-move]').forEach(s=>{
-    s.onchange = ()=>{
-      const id = s.getAttribute('data-move');
-      const items = load('tasks', []);
-      const t = items.find(x=>x.id===id); if (!t) return;
-      t.status = s.value; save('tasks', items); renderApp();
-    };
-  });
-  $$('[data-edit]').forEach(b=>{
-    if (b.closest('.card')?.querySelector('h3')?.textContent.includes('To do') ||
-        b.closest('.card')?.querySelector('h3')?.textContent.includes('In progress') ||
-        b.closest('.card')?.querySelector('h3')?.textContent.includes('Done')) {
-      b.onclick = ()=>{
-        const id=b.getAttribute('data-edit');
-        const items = load('tasks', []);
-        const t = items.find(x=>x.id===id); if (!t) return;
-        openModal('m-task');
-        $('#task-id').value=id; $('#task-title').value=t.title; $('#task-status').value=t.status;
-      };
-    }
-  });
-  $$('[data-del]').forEach(b=>{
-    if (b.closest('.card')?.querySelector('h3')?.textContent.match(/To do|In progress|Done/)) {
-      b.onclick = ()=>{
-        const id=b.getAttribute('data-del');
-        let items = load('tasks', []).filter(x=>x.id!==id);
-        save('tasks', items); notify('Deleted'); renderApp();
-      };
-    }
-  });
-
-  // Users
-  if ($('#addUser')) $('#addUser').onclick = ()=> openModal('m-user');
-  if ($('#save-user')) {
-    $('#save-user').onclick = ()=>{
-      const users = load('users', []);
-      const email = $('#user-email').value.trim().toLowerCase();
-      if (!email) return notify('Email required','warn');
-      const obj = {
-        name: $('#user-name').value.trim() || email.split('@')[0],
-        email,
-        username: $('#user-username').value.trim() || email.split('@')[0],
-        role: $('#user-role').value,
-        img: $('#user-img').value.trim(),
-        contact:'', password:''
-      };
-      const i = users.findIndex(x=>x.email.toLowerCase()===email);
-      if (i>=0) users[i]=obj; else users.push(obj);
-      save('users', users); notify('Saved'); closeModal('m-user'); renderApp();
-    };
-  }
-  // Users edit/del
-  $$('table .btn.ghost[data-edit]').forEach(b=>{
-    if (b.closest('table')?.closest('.card')?.textContent.includes('Users')) {
-      b.onclick = ()=>{
-        const email=b.getAttribute('data-edit');
-        const users = load('users', []);
-        const u = users.find(x=>x.email===email); if (!u) return;
-        openModal('m-user');
-        $('#user-name').value=u.name; $('#user-email').value=u.email;
-        $('#user-username').value=u.username; $('#user-role').value=u.role;
-        $('#user-img').value=u.img||'';
-      };
-    }
-  });
-  $$('table .btn.danger[data-del]').forEach(b=>{
-    if (b.closest('table')?.closest('.card')?.textContent.includes('Users')) {
-      b.onclick = ()=>{
-        const email=b.getAttribute('data-del');
-        let users = load('users', []).filter(x=>x.email!==email);
-        save('users', users); notify('Deleted'); renderApp();
-      };
-    }
-  });
-
-  // Theme switching
-  $$('[data-theme]').forEach(btn=>{
-    btn.onclick = ()=>{
-      const key = btn.getAttribute('data-theme');
-      const found = THEMES.find(t=>t.key===key);
-      if (!found) return;
-      save('_theme', found); applyTheme(); notify(`Theme: ${found.name}`); renderApp();
-    };
-  });
-
-  // Close modal buttons
-  $$('[data-close]').forEach(b=> b.onclick = ()=> closeModal(b.getAttribute('data-close')));
 }
 
-function openModal(id){ $('#'+id)?.classList.add('active'); $('#mb-'+id.split('-')[1])?.classList.add('active'); }
-function closeModal(id){ $('#'+id)?.classList.remove('active'); $('#mb-'+id.split('-')[1])?.classList.remove('active'); }
+// COGS
+function wireCOGS(){
+  if ($('#addCOGS')) $('#addCOGS').onclick = ()=> openModal('m-cogs');
+  const sec = $('[data-section="cogs"]'); if (!sec) return;
+
+  $('#save-cogs')?.addEventListener('click', ()=>{
+    const rows = load('cogs', []);
+    const id = $('#cogs-id').value || ('c_'+Date.now());
+    const row = {
+      id,
+      date: $('#cogs-date').value || new Date().toISOString().slice(0,10),
+      grossIncome: parseFloat($('#cogs-grossIncome').value||'0'),
+      produceCost: parseFloat($('#cogs-produceCost').value||'0'),
+      itemCost: parseFloat($('#cogs-itemCost').value||'0'),
+      freight: parseFloat($('#cogs-freight').value||'0'),
+      delivery: parseFloat($('#cogs-delivery').value||'0'),
+      other: parseFloat($('#cogs-other').value||'0'),
+    };
+    const i = rows.findIndex(x=>x.id===id);
+    if (i>=0) rows[i]=row; else rows.push(row);
+    save('cogs', rows); closeModal('m-cogs'); notify('Saved'); renderApp();
+  });
+
+  sec.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if (!btn) return;
+    const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
+    if (btn.hasAttribute('data-edit')) {
+      const rows = load('cogs', []); const r = rows.find(x=>x.id===id); if (!r) return;
+      openModal('m-cogs');
+      $('#cogs-id').value=id; $('#cogs-date').value=r.date;
+      $('#cogs-grossIncome').value=r.grossIncome; $('#cogs-produceCost').value=r.produceCost;
+      $('#cogs-itemCost').value=r.itemCost; $('#cogs-freight').value=r.freight;
+      $('#cogs-delivery').value=r.delivery; $('#cogs-other').value=r.other;
+    } else {
+      let rows = load('cogs', []).filter(x=>x.id!==id);
+      save('cogs', rows); notify('Deleted'); renderApp();
+    }
+  });
+}
+
+// Tasks with DnD
+function setupDnD(){
+  ['todo','inprogress','done'].forEach(k=>{
+    const lane = $('#lane-'+k); if (!lane) return;
+    lane.ondragover = (e)=>{ e.preventDefault(); };
+    lane.ondrop = (e)=>{
+      e.preventDefault();
+      const id = e.dataTransfer.getData('text/plain');
+      const items = load('tasks', []);
+      const t = items.find(x=>x.id===id); if (!t) return;
+      t.status = k; save('tasks', items); renderApp();
+    };
+  });
+
+  $$('[data-task]').forEach(card=>{
+    card.ondragstart = (e)=> { e.dataTransfer.setData('text/plain', card.getAttribute('data-task')); };
+  });
+}
+
+function wireTasks(){
+  const root = $('[data-section="tasks"]'); if (!root) return;
+  if ($('#addTask')) $('#addTask').onclick = ()=> openModal('m-task');
+
+  $('#save-task')?.addEventListener('click', ()=>{
+    const items = load('tasks', []);
+    const id = $('#task-id').value || ('t_'+Date.now());
+    const obj = { id, title: $('#task-title').value.trim(), status: $('#task-status').value };
+    const i = items.findIndex(x=>x.id===id);
+    if (i>=0) items[i]=obj; else items.push(obj);
+    save('tasks',items); closeModal('m-task'); notify('Saved'); renderApp();
+  });
+
+  root.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if (!btn) return;
+    const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
+    if (btn.hasAttribute('data-edit')) {
+      const items = load('tasks', []); const t = items.find(x=>x.id===id); if (!t) return;
+      openModal('m-task'); $('#task-id').value = t.id; $('#task-title').value = t.title; $('#task-status').value = t.status;
+    } else {
+      let items = load('tasks', []).filter(x=>x.id!==id);
+      save('tasks', items); notify('Deleted'); renderApp();
+    }
+  });
+}
+
+// Users
+function wireUsers(){
+  if (!canManage()) return;
+  if ($('#addUser')) $('#addUser').onclick = ()=> openModal('m-user');
+
+  $('#save-user')?.addEventListener('click', ()=>{
+    const users = load('users', []);
+    const email = $('#user-email').value.trim().toLowerCase();
+    if (!email) return notify('Email required','warn');
+    const obj = {
+      name: $('#user-name').value.trim() || email.split('@')[0],
+      email,
+      username: $('#user-username').value.trim() || email.split('@')[0],
+      role: $('#user-role').value,
+      img: $('#user-img').value.trim(),
+      contact:'', password:''
+    };
+    const i = users.findIndex(x=>x.email.toLowerCase()===email);
+    if (i>=0) users[i]=obj; else users.push(obj);
+    save('users', users); closeModal('m-user'); notify('Saved'); renderApp();
+  });
+
+  const sec = $('[data-section="users"]'); if (!sec) return;
+  sec.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if (!btn) return;
+    const email = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!email) return;
+    if (btn.hasAttribute('data-edit')) {
+      const users = load('users', []); const u = users.find(x=>x.email===email); if (!u) return;
+      openModal('m-user');
+      $('#user-name').value=u.name; $('#user-email').value=u.email;
+      $('#user-username').value=u.username; $('#user-role').value=u.role;
+      $('#user-img').value=u.img||'';
+    } else {
+      let users = load('users', []).filter(x=>x.email!==email);
+      save('users', users); notify('Deleted'); renderApp();
+    }
+  });
+}
+
+// Theme dropdowns (instant apply)
+function wireTheme(){
+  const mode = $('#theme-mode'); const size = $('#theme-size');
+  if (!mode || !size) return;
+  const apply = ()=>{
+    const t = { mode: mode.value, size: size.value };
+    save('_theme2', t); applyTheme(); renderApp();
+  };
+  mode.onchange = apply;
+  size.onchange = apply;
+}
 
 // Initial render
 if (session) renderApp();
