@@ -2,9 +2,6 @@
    Sushi POS — App (Firebase)
    ========================= */
 
-/* ===== Config toggles (helps avoid noisy console if Firestore not ready) ===== */
-const USE_FIRESTORE = true;  // set to false if you want to run fully offline
-
 /* ===== Utilities ===== */
 const q = s => document.querySelector(s);
 const qa = s => Array.from(document.querySelectorAll(s));
@@ -12,7 +9,7 @@ const qa = s => Array.from(document.querySelectorAll(s));
 /** Local save + trigger cloud push (if signed in) */
 function save(k, v) {
   localStorage.setItem(k, JSON.stringify(v));
-  try { if (USE_FIRESTORE) cloudMaybePush(); } catch(e) {}
+  try { cloudMaybePush(); } catch(e) {}
 }
 const load = (k, def) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } };
 
@@ -22,7 +19,7 @@ function showNotif(msg) {
   setTimeout(() => { n.style.opacity = 0; setTimeout(() => n.style.display = 'none', 260); }, 1600);
 }
 
-/* Image compression */
+/* Image compression to avoid localStorage quota issues */
 async function compressImage(file, maxW=1000, maxH=1000, quality=0.8){
   if(!file) return '';
   const img = await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=URL.createObjectURL(file); });
@@ -40,34 +37,29 @@ async function compressImage(file, maxW=1000, maxH=1000, quality=0.8){
 const formatPhone=v=>{const d=(v||'').toString().replace(/\D/g,'').slice(0,10); if(d.length<4) return d; if(d.length<7) return `(${d.slice(0,3)}) ${d.slice(3)}`; return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;};
 
 /* ===== Theme ===== */
-function applyTheme(){ document.body.classList.remove('dark'); /* we’re using custom dark palette already */ }
+function applyTheme(){
+  const t=load('theme',{color:'teal',font:'medium'});
+  document.body.dataset.theme = t.color; // drive CSS variables
+  document.body.dataset.font = t.font;
+}
 
 /* ===== Defaults / State ===== */
 const DEFAULT_ADMIN={username:'admin',email:'admin@sushi.com',password:'admin123',role:'admin',name:'Admin',contact:'(123) 456-7890',img:''};
-const PERMA_USERS=[
-  {username:'admin', email:'admin@sushi.com', role:'admin', name:'Admin', contact:'', password:'admin123', img:''},
-  {username:'manager', email:'minmaung0307@gmail.com', role:'manager', name:'Manager', contact:'', password:'admin123', img:''}
-];
-const DEMO={posts:[],inventory:[],sushi:[],vendors:[],cogs:[],tasks:[{id:'todo',name:'To Do',cards:[]},{id:'doing',name:'In Progress',cards:[]},{id:'done',name:'Done',cards:[]},],users:[DEFAULT_ADMIN, ...PERMA_USERS]};
+const DEFAULT_MANAGER={username:'manager',email:'minmaung0307@gmail.com',password:'manager123',role:'manager',name:'Manager',contact:'',img:''};
+const DEMO={posts:[],inventory:[],sushi:[],vendors:[],cogs:[],tasks:[{id:'todo',name:'To Do',cards:[]},{id:'doing',name:'In Progress',cards:[]},{id:'done',name:'Done',cards:[]},],users:[DEFAULT_ADMIN,DEFAULT_MANAGER]};
 const SKEYS=Object.keys(DEMO); let S={};
 const UI_DEFAULT={quickPostOpen:false,sidebarOpen:false}; let UI=load('ui',UI_DEFAULT);
 let session=load('session',null); let page=load('page','dashboard');
 
 /* ===== PWA Install Button Support ===== */
-let deferredPrompt = null;
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault(); deferredPrompt = e;
-  const btn = document.getElementById('installBtn'); if (btn) btn.style.display='inline-block';
-});
-window.addEventListener('appinstalled', () => {
-  deferredPrompt = null; showNotif('App installed!');
-  const btn = document.getElementById('installBtn'); if (btn) btn.style.display='none';
-});
+let deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredPrompt=e; const b=q('#installBtn'); if(b) b.style.display='inline-flex';});
+window.addEventListener('appinstalled',()=>{deferredPrompt=null; showNotif('App installed!'); const b=q('#installBtn'); if(b) b.style.display='none';});
 
 /* ======================
    Firebase (Auth + DB)
    ====================== */
-
+/* Using compat APIs in index.html scripts */
 const firebaseConfig = {
   /* 🔧 REPLACE with your Firebase config (Project Settings → General → Web app) */
   apiKey: "AIzaSyBY52zMMQqsvssukui3TfQnMigWoOzeKGk",
@@ -79,25 +71,24 @@ const firebaseConfig = {
   measurementId: "G-M8Q8EJ4T7Q"
 };
 
-
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db   = firebase.firestore();
-
-/* Anyone in this list is always an admin when they sign in */
-const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com'];
-
-/* Firestore helpers (safe if disabled) */
 let cloudUnsub = null;
+
+/* Super admins are always admin on sign-in */
+const SUPER_ADMINS = ['admin@sushi.com','minmaung0307@gmail.com'];
+
 const userDocRef = () => db.collection('workspaces').doc(auth.currentUser.uid);
 
 async function cloudSaveAll() {
-  if (!USE_FIRESTORE || !auth.currentUser) return;
+  if (!auth.currentUser) return;
   const payload = {}; SKEYS.forEach(k => payload[k] = load(k, DEMO[k]));
   await userDocRef().set(payload, { merge: true });
 }
+
 async function cloudLoadAll() {
-  if (!USE_FIRESTORE || !auth.currentUser) return;
+  if (!auth.currentUser) return;
   const snap = await userDocRef().get();
   if (snap.exists) {
     const data = snap.data() || {};
@@ -106,39 +97,41 @@ async function cloudLoadAll() {
     await userDocRef().set(DEMO);
   }
 }
+
 function cloudSubscribe() {
-  if (!USE_FIRESTORE || !auth.currentUser) return;
+  if (!auth.currentUser) return;
   if (cloudUnsub) cloudUnsub();
   cloudUnsub = userDocRef().onSnapshot(snap => {
     if (!snap.exists) return;
     const data = snap.data() || {};
     SKEYS.forEach(k => save(k, data[k] ?? DEMO[k]));
     if (q('.app')) renderApp();
-  }, _err => { /* keep quiet on watch errors when offline */ });
+  });
 }
-async function cloudMaybePush(){ if (USE_FIRESTORE && auth.currentUser) { try{ await cloudSaveAll(); }catch(e){} } }
+
+async function cloudMaybePush(){ if (auth.currentUser) { try{ await cloudSaveAll(); }catch(e){} } }
+
+async function ensureUsernameMapping(username, email) {
+  if (!username || !email) return;
+  await db.collection('usernames').doc(username.toLowerCase()).set({ email: email.toLowerCase() });
+}
 
 /* ===== Helpers ===== */
 function syncState(){
   SKEYS.forEach(k=>S[k]=load(k,DEMO[k]));
   if(!Array.isArray(S.users)) S.users=[];
-  // ensure permanent users exist & roles
-  PERMA_USERS.forEach(p=>{
-    if(!S.users.some(u=>(u.email||'').toLowerCase()===(p.email||'').toLowerCase())){
-      S.users.push({...p});
+  // Ensure our built-in admin/manager exist
+  [DEFAULT_ADMIN, DEFAULT_MANAGER].forEach(template=>{
+    if(!S.users.some(u=>(u.email||'').toLowerCase()===(template.email.toLowerCase()))){
+      S.users.push(template);
     }
   });
-  // always ensure base admin present
-  if(!S.users.some(u=>(u.username||'').toLowerCase()===(DEFAULT_ADMIN.username))){
-    S.users.push(DEFAULT_ADMIN);
-  }
   save('users', S.users);
 }
 
 /* ===== Layout render ===== */
 function renderApp(){
   syncState(); applyTheme();
-  const canPost = session && (session.role==='admin' || session.role==='manager');
 
   q('#root').innerHTML=`
     <div class="app">
@@ -146,21 +139,30 @@ function renderApp(){
       <div id="scrim" class="scrim ${UI.sidebarOpen && window.innerWidth<=900 ? 'show':''}"></div>
       <main class="main">
         <div class="topbar">
-          <div style="display:flex;align-items:center;gap:8px">
-            <!-- Inline burger on mobile/tablet -->
-            <button id="burgerFab" class="small" title="Menu"><i class="ri-menu-line"></i></button>
-            <!-- Desktop burger -->
-            <button id="navToggle" class="small" title="Menu"><i class="ri-menu-line"></i></button>
-            <div class="who">Logged in as: <b>${session.username || session.email}</b> <span class="badge" style="margin-left:6px">${session.role}</span></div>
+          <div class="left">
+            <button id="burgerFab" class="burger-inline" title="Menu"><i class="ri-menu-line"></i></button>
+            <div class="who">Logged in as: <b>${session.username || session.email}</b> <span class="role-badge ${session.role}">${session.role}</span></div>
           </div>
-          <div style="display:flex;gap:8px;align-items:center;position:relative">
-            <button id="installBtn" class="small" style="display:none"><i class="ri-download-2-line"></i> Install</button>
+          <div class="right">
+            <button id="installBtn" class="small" style="display:none"><i class="ri-download-2-line"></i><span>Install</span></button>
+            <select id="themeColor" class="small">
+              <option value="teal">Teal</option>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="rose">Rose</option>
+              <option value="indigo">Indigo</option>
+            </select>
+            <select id="themeFont" class="small">
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+            </select>
             <button id="userBtn" class="small" title="Account"><i class="ri-user-3-line"></i></button>
             <button class="small" onclick="logout()"><i class="ri-logout-box-r-line"></i> Logout</button>
 
-            <div id="userMenu" style="display:none;position:absolute;right:0;top:42px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);min-width:220px;overflow:hidden;z-index:111;">
-              <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-weight:700">${session.name || session.username}</div>
-              <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:.9em;color:var(--muted)">
+            <div id="userMenu" class="user-menu">
+              <div class="um-head">${session.name || session.username}</div>
+              <div class="um-body">
                 <div><strong>User:</strong> ${session.username || '—'}</div>
                 <div><strong>Email:</strong> ${session.email || '—'}</div>
                 <div><strong>Contact:</strong> ${session.contact || '—'}</div>
@@ -170,45 +172,31 @@ function renderApp(){
           </div>
         </div>
 
-        ${renderPage(canPost)}
-
-        <div class="footer">
-          <div class="links">
-            <a href="./docs/setup-guide.html" target="_blank">Setup Guide</a>
-            <a href="./docs/policy.html" target="_blank">Policy</a>
-            <a href="./docs/license.html" target="_blank">License</a>
-            <a href="./docs/contact.html" target="_blank">Contact</a>
-          </div>
-          <div class="social">
-            <a href="https://youtube.com" target="_blank" title="YouTube"><i class="ri-youtube-fill"></i></a>
-            <a href="https://facebook.com" target="_blank" title="Facebook"><i class="ri-facebook-fill"></i></a>
-            <a href="https://instagram.com" target="_blank" title="Instagram"><i class="ri-instagram-line"></i></a>
-            <a href="https://tiktok.com" target="_blank" title="TikTok"><i class="ri-tiktok-fill"></i></a>
-            <a href="https://twitter.com" target="_blank" title="Twitter/X"><i class="ri-twitter-x-line"></i></a>
-          </div>
-        </div>
-
+        ${renderPage()}
         <div id="modal" class="modal"><div class="inner" id="modalInner"></div></div>
       </main>
     </div>
   `;
 
-  // Sidebar wiring
-  const sb=q('.sidebar'); const scr=q('#scrim');
-  const toggleSide=()=>{UI.sidebarOpen=!UI.sidebarOpen; save('ui',UI); sb.classList.toggle('open',UI.sidebarOpen); if(scr) scr.classList.toggle('show',UI.sidebarOpen && window.innerWidth<=900);};
-  const closeSidebarIfMobile=()=>{UI.sidebarOpen=false; save('ui',UI); sb.classList.remove('open'); if(scr) scr.classList.remove('show');};
+  // Theme controls (color + font)
+  const theme=load('theme',{color:'teal',font:'medium'});
+  q('#themeColor').value=theme.color; q('#themeFont').value=theme.font;
+  q('#themeColor').onchange=q('#themeFont').onchange=()=>{save('theme',{color:q('#themeColor').value,font:q('#themeFont').value}); applyTheme();};
 
-  const nt=q('#navToggle'); const bf=q('#burgerFab');
-  if(nt) nt.onclick=toggleSide; if(bf) bf.onclick=toggleSide;
+  // Sidebar wiring
+  const sb=q('.sidebar'); const scr=q('#scrim'); const bf=q('#burgerFab');
+  const toggleSide=()=>{UI.sidebarOpen=!UI.sidebarOpen; save('ui',UI); sb.classList.toggle('open',UI.sidebarOpen); if(scr) scr.classList.toggle('show',UI.sidebarOpen && window.innerWidth<=900);};
+  if(bf) bf.onclick=(e)=>{e.stopPropagation(); toggleSide();};
   sb.classList.toggle('open',UI.sidebarOpen);
   if(scr){scr.onclick=closeSidebarIfMobile;}
   q('main').addEventListener('click',()=>{ if(window.innerWidth<=900 && UI.sidebarOpen) closeSidebarIfMobile(); });
+  if (window.innerWidth <= 900) { UI.sidebarOpen = false; save('ui', UI); sb.classList.remove('open'); if (scr) scr.classList.remove('show'); }
   window.onresize = () => { if (window.innerWidth <= 900) closeSidebarIfMobile(); };
 
   // PWA install btn
   const installBtn = document.getElementById('installBtn');
   if (installBtn) {
-    if (deferredPrompt) installBtn.style.display = 'inline-block';
+    if (deferredPrompt) installBtn.style.display = 'inline-flex';
     installBtn.onclick = async () => {
       if (!deferredPrompt) return;
       deferredPrompt.prompt();
@@ -222,6 +210,7 @@ function renderApp(){
   const userBtn = document.getElementById('userBtn');
   const userMenu = document.getElementById('userMenu');
   if (userBtn && userMenu) {
+    userMenu.style.display='none';
     userBtn.onclick = (e) => { e.stopPropagation(); userMenu.style.display = userMenu.style.display === 'none' ? 'block' : 'none'; };
     document.addEventListener('click', () => { userMenu.style.display = 'none'; }, { once:true });
   }
@@ -229,79 +218,54 @@ function renderApp(){
   qa('.menu-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
   afterRender();
 }
+function closeSidebarIfMobile(){UI.sidebarOpen=false; save('ui',UI); const sb=q('.sidebar'); const scr=q('#scrim'); sb.classList.remove('open'); if(scr) scr.classList.remove('show');}
 
-/* ===== Login (username OR email via Firebase) ===== */
-function renderLogin(){
-  applyTheme();
-  q('#root').innerHTML=`
-    <div class="login-bg">
-      <form class="login-form" id="loginForm" autocomplete="off">
-        <h1><i class="ri-leaf-fill"></i> Sushi POS</h1>
-        <input type="text" id="id" placeholder="Username or Email" required autofocus>
-        <input type="password" id="password" placeholder="Password" required>
-        <button type="submit" class="btn">Login</button>
-        <div class="error" id="loginError"></div>
-      </form>
-    </div>`;
-  q('#loginForm').onsubmit = async (e) => {
-    e.preventDefault();
-    const id = q('#id').value.trim().toLowerCase();
-    const pw = q('#password').value;
-    let email = id.includes('@') ? id : null;
-
-    // map username->email from local users first
-    if (!email) {
-      const users = load('users', DEMO.users);
-      const u = users.find(x => (x.username||'').toLowerCase() === id);
-      if (u && u.email) email = u.email.toLowerCase();
-    }
-
-    try {
-      if (!email) throw new Error('Use email or a username that has an email.');
-      await auth.signInWithEmailAndPassword(email, pw);
-      await cloudLoadAll().catch(()=>{});
-      // hydrate session from local users or fallback
-      const users = load('users', DEMO.users);
-      let prof = users.find(u => (u.email||'').toLowerCase()===email);
-      if (!prof) {
-        const role = SUPER_ADMINS.includes(email) ? 'admin' : 'user';
-        prof = { name: role==='admin'?'Admin':'User', username: email.split('@')[0], email, contact:'', role, password:'', img:'' };
-        users.push(prof); save('users', users);
-      }
-      // make sure super admins are always admin
-      if (SUPER_ADMINS.includes(email)) { prof.role = 'admin'; save('users', users); }
-
-      session = { ...prof }; save('session', session);
-      showNotif('Login successful');
-      renderApp();
-      cloudSubscribe();
-    } catch (err) {
-      q('#loginError').textContent = err.message || 'Invalid credentials';
-    }
-  };
-}
-
-/* ===== Sidebar ===== */
+/* ===== Sidebar (now includes Pages & Social) ===== */
 function renderSidebar(){
   return `
-    <aside class="sidebar ${UI.sidebarOpen?'open':''}">
-      <div class="brand"><i class="ri-leaf-fill"></i> Sushi POS</div>
-      <div class="search-wrap"><input id="globalSearch" class="search" placeholder="Search (e.g., tuna, vendor, task)"></div>
+    <aside class="sidebar">
+      <div class="brand">
+        <i class="ri-leaf-fill"></i> Sushi POS
+      </div>
+
+      <div class="search-wrap">
+        <input id="globalSearch" class="search" placeholder="Search (e.g., tuna, vendor, task)">
+      </div>
+
       <nav class="menu">
         ${['dashboard','inventory','sushi','vendors','tasks','cogs','settings'].map(p=>`
           <button class="menu-btn" data-page="${p}" onclick="go('${p}')"><i class="ri-${iconFor(p)}"></i> ${cap(p)}</button>`).join('')}
       </nav>
-      <button class="logout" onclick="logout()">Logout</button>
+
+      <div class="divider"></div>
+
+      <div class="pages">
+        <div class="section-title"><i class="ri-pages-line"></i> Pages</div>
+        <a class="link-row" href="policy.html"><i class="ri-shield-keyhole-line"></i> Privacy Policy</a>
+        <a class="link-row" href="license.html"><i class="ri-copyright-line"></i> License</a>
+        <a class="link-row" href="setup-guide.html"><i class="ri-guide-line"></i> Setup Guide</a>
+        <a class="link-row" href="contact.html"><i class="ri-customer-service-2-line"></i> Contact</a>
+      </div>
+
+      <div class="social-bar">
+        <a href="https://youtube.com" target="_blank" title="YouTube"><i class="ri-youtube-fill"></i></a>
+        <a href="https://facebook.com" target="_blank" title="Facebook"><i class="ri-facebook-circle-fill"></i></a>
+        <a href="https://instagram.com" target="_blank" title="Instagram"><i class="ri-instagram-line"></i></a>
+        <a href="https://tiktok.com" target="_blank" title="TikTok"><i class="ri-tiktok-fill"></i></a>
+        <a href="https://twitter.com" target="_blank" title="Twitter/X"><i class="ri-twitter-x-line"></i></a>
+      </div>
+
+      <button class="logout" onclick="logout()"><i class="ri-logout-box-r-line"></i> Logout</button>
     </aside>`;
 }
 const iconFor=p=>({dashboard:'dashboard-2-line',inventory:'archive-2-line',sushi:'restaurant-2-line',vendors:'store-3-line',tasks:'task-line',cogs:'coins-line',settings:'settings-3-line'})[p];
 const cap=s=>s[0].toUpperCase()+s.slice(1);
-function go(p){page=p; save('page',p); if(window.innerWidth<=900){ UI.sidebarOpen=false; save('ui',UI); } renderApp();}
+function go(p){page=p; save('page',p); if(window.innerWidth<=900) closeSidebarIfMobile(); renderApp();}
 
-/* ===== Pages ===== */
-function renderPage(canPost){
+/* ===== Page router ===== */
+function renderPage(){
   switch(page){
-    case 'dashboard': return renderDashboard(canPost);
+    case 'dashboard': return renderDashboard();
     case 'inventory': return renderInventory();
     case 'sushi': return renderSushi();
     case 'vendors': return renderVendors();
@@ -312,17 +276,18 @@ function renderPage(canPost){
   }
 }
 
-/* ---------- Dashboard (posts full-width + image; restrict post creation) ---------- */
-function renderDashboard(canPost){
+/* ---------- Dashboard ---------- */
+function renderDashboard(){
   const low=S.inventory.filter(i=> i.qty <= (i.critical||0) || i.qty <= (i.low||0));
   const totals=S.cogs.reduce((a,c)=>{const gp=(+c.gross_income||0)-(+c.produce||0)-(+c.item_cost||0)-(+c.freight||0)-(+c.delivery||0)-(+c.other||0); a.gi+=+c.gross_income||0; a.gp+=gp; return a;},{gi:0,gp:0});
+  const canPost = session.role==='admin' || session.role==='manager'; // users cannot post
   return `
-    <div class="dash-head" style="display:flex; align-items:center; justify-content:space-between; margin:10px 0 12px;">
-      <h1 style="margin:0">Dashboard</h1>
-      ${canPost ? `<button id="qpToggle" class="icon-btn plus ${UI.quickPostOpen?'open':''}" title="${UI.quickPostOpen?'Close quick post form':'New quick post'}"><i class="ri-add-line"></i></button>` : ''}
+    <div class="dash-head">
+      <h1>Dashboard</h1>
+      ${canPost?`<button id="qpToggle" class="icon-btn plus ${UI.quickPostOpen?'open':''}" title="${UI.quickPostOpen?'Close quick post form':'New quick post'}"><i class="ri-add-line"></i></button>`:''}
     </div>
 
-    ${canPost && UI.quickPostOpen?`
+    ${UI.quickPostOpen && canPost?`
       <form class="form" id="postForm" enctype="multipart/form-data">
         <input class="field-12" id="postTitle" placeholder="Post title">
         <textarea class="field-12" id="postBody" placeholder="Write something..."></textarea>
@@ -333,39 +298,40 @@ function renderDashboard(canPost){
     <div class="grid auto">
       <div class="card" onclick="go('inventory')">
         <div class="card-actions"><button class="icon-btn edit" onclick="event.stopPropagation();go('inventory')"><i class="ri-arrow-right-up-line"></i></button></div>
-        <div class="stat"><div class="num" style="font-weight:800;font-size:28px">${S.inventory.length}</div><div class="card-sub">Inventory Items</div></div>
+        <div class="stat"><div class="num">${S.inventory.length}</div><div class="hint">Inventory Items</div></div>
         ${low.length?`<div class="badge ${low.length>0?'warn':''}" style="margin-top:8px">${low.length} low/critical</div>`:''}
       </div>
       <div class="card" onclick="go('sushi')">
         <div class="card-actions"><button class="icon-btn edit" onclick="event.stopPropagation();go('sushi')"><i class="ri-arrow-right-up-line"></i></button></div>
-        <div class="stat"><div class="num" style="font-weight:800;font-size:28px">${S.sushi.length}</div><div class="card-sub">Sushi Items</div></div>
+        <div class="stat"><div class="num">${S.sushi.length}</div><div class="hint">Sushi Items</div></div>
       </div>
       <div class="card" onclick="go('vendors')">
         <div class="card-actions"><button class="icon-btn edit" onclick="event.stopPropagation();go('vendors')"><i class="ri-arrow-right-up-line"></i></button></div>
-        <div class="stat"><div class="num" style="font-weight:800;font-size:28px">${S.vendors.length}</div><div class="card-sub">Vendors</div></div>
+        <div class="stat"><div class="num">${S.vendors.length}</div><div class="hint">Vendors</div></div>
       </div>
       <div class="card" onclick="go('tasks')">
         <div class="card-actions"><button class="icon-btn edit" onclick="event.stopPropagation();go('tasks')"><i class="ri-arrow-right-up-line"></i></button></div>
-        <div class="stat"><div class="num" style="font-weight:800;font-size:28px">${S.tasks.reduce((a,t)=>a+t.cards.length,0)}</div><div class="card-sub">Tasks</div></div>
+        <div class="stat"><div class="num">${S.tasks.reduce((a,t)=>a+t.cards.length,0)}</div><div class="hint">Tasks</div></div>
       </div>
       <div class="card" onclick="go('cogs')">
         <div class="card-actions"><button class="icon-btn edit" onclick="event.stopPropagation();go('cogs')"><i class="ri-arrow-right-up-line"></i></button></div>
-        <div class="stat"><div class="num" style="font-weight:800;font-size:22px">$${totals.gi.toFixed(2)}</div><div class="card-sub">Total Gross Income</div></div>
+        <div class="stat"><div class="num">$${totals.gi.toFixed(2)}</div><div class="hint">Total Gross Income</div></div>
         <div class="card-sub" style="margin-top:6px">Gross Profit: <b>$${totals.gp.toFixed(2)}</b></div>
       </div>
       <div class="card" onclick="go('settings')">
         <div class="card-actions"><button class="icon-btn edit" onclick="event.stopPropagation();go('settings')"><i class="ri-arrow-right-up-line"></i></button></div>
-        <div class="stat"><div class="num" style="font-weight:800;font-size:28px">${S.users.length}</div><div class="card-sub">Users</div></div>
+        <div class="stat"><div class="num">${S.users.length}</div><div class="hint">Users</div></div>
       </div>
     </div>
 
     <div class="posts" style="margin-top:10px">
       ${S.posts.map((p,i)=>`
         <div class="card">
-          <div class="card-actions">
-            ${canPost?`<button class="icon-btn edit" onclick="editPost(${i})"><i class="ri-edit-2-line"></i></button>
-            <button class="icon-btn delete" onclick="delPost(${i})"><i class="ri-delete-bin-6-line"></i></button>`:''}
-          </div>
+          ${(session.role==='admin'||session.role==='manager')?`
+            <div class="card-actions">
+              <button class="icon-btn edit" onclick="editPost(${i})"><i class="ri-edit-2-line"></i></button>
+              <button class="icon-btn delete" onclick="delPost(${i})"><i class="ri-delete-bin-6-line"></i></button>
+            </div>`:''}
           ${p.img?`<img src="${p.img}" class="post-img" alt="post image">`:''}
           <div class="card-title">${p.title}</div>
           <div class="card-sub">${p.body||''}</div>
@@ -374,11 +340,10 @@ function renderDashboard(canPost){
     </div>
   `;
 }
-function wireDashboard(canPost){
+function wireDashboard(){
   const t=q('#qpToggle'); if(t){ t.onclick=()=>{UI.quickPostOpen=!UI.quickPostOpen; save('ui',UI); renderApp();}; }
   const f=q('#postForm'); if(!f) return;
   f.onsubmit=async(e)=>{e.preventDefault();
-    if(!canPost) return; // guard
     const title=q('#postTitle').value.trim(), body=q('#postBody').value.trim(), file=q('#postImg').files[0];
     if(!title) return;
     let img=''; if(file) img=await compressImage(file, 1400, 1400, 0.8);
@@ -389,7 +354,7 @@ function wireDashboard(canPost){
   };
 }
 
-/* ---------- Inventory (Qty +/-) with row highlighting ---------- */
+/* ---------- Inventory (row warnings) ---------- */
 function renderInventory(){
   return `
     <h1>Inventory</h1>
@@ -407,11 +372,8 @@ function renderInventory(){
       <thead><tr><th>Image</th><th>Code</th><th>Name</th><th>Qty</th><th>Low</th><th>Critical</th><th>Actions</th></tr></thead>
       <tbody>
         ${S.inventory.map((it,i)=>{
-          const isCrit = (+it.qty||0) <= (+it.critical||0) && (+it.critical||0) > 0;
-          const isLow = !isCrit && ((+it.qty||0) <= (+it.low||0) && (+it.low||0) > 0);
-          const rowClass = isCrit ? 'crit-row' : isLow ? 'warn-row' : '';
-          const badge = isCrit ? `<span class="badge danger">critical</span>` :
-                        isLow ? `<span class="badge warn">low</span>` : '';
+          const rowClass = it.qty<=+it.critical ? 'row-danger' :
+                           it.qty<=+it.low ? 'row-warn' : '';
           return `
           <tr class="${rowClass}">
             <td>${it.img?`<span class="thumb-wrap"><img class="img-thumb" src="${it.img}"><img class="img-big" src="${it.img}"></span>`:'—'}</td>
@@ -420,7 +382,7 @@ function renderInventory(){
             <td>
               <div class="qty">
                 <button class="btn" onclick="decQty(${i});return false;">−</button>
-                <strong>${it.qty}</strong> ${badge}
+                <strong>${it.qty}</strong>
                 <button class="btn" onclick="incQty(${i});return false;">+</button>
               </div>
             </td>
@@ -432,8 +394,7 @@ function renderInventory(){
             </td>
           </tr>`;}).join('')}
       </tbody>
-    </table>
-  `;
+    </table>`;
 }
 function wireInventory(){
   const f=q('#invForm'); if(!f) return;
@@ -444,6 +405,7 @@ function wireInventory(){
     const low=+q('#invLow').value||0;
     const critical=+q('#invCritical').value||0;
     const file=q('#invImg').files[0];
+
     if(!name) return;
     let img=''; if(file) img=await compressImage(file, 1200, 1200, 0.8);
     const inv=load('inventory',[]); inv.push({code,name,qty,low,critical,img});
@@ -541,13 +503,11 @@ function editSushi(i){
     </form>`);
   q('#eSuType').value=s.type||'';
   q('#editSu').onsubmit=async(e)=>{e.preventDefault();
-    try{
       const sushi=load('sushi',[]); const rec=sushi[i];
       rec.name=q('#eSuName').value.trim(); rec.price=+q('#eSuPrice').value||0; rec.type=q('#eSuType').value||'';
       rec.ingredients=q('#eSuIngr').value.trim(); rec.instructions=q('#eSuInst').value.trim();
       const f=q('#eSuImg').files[0]; if(f){ rec.img=await compressImage(f, 1400, 1400, 0.8); }
-      save('sushi',sushi); showNotif('Sushi updated');
-    } finally { closeModal(); renderApp(); }
+      save('sushi',sushi); showNotif('Sushi updated'); closeModal(); renderApp();
   };
 }
 function delSushi(i){const sushi=load('sushi',[]); sushi.splice(i,1); save('sushi',sushi); showNotif('Sushi deleted'); renderApp();}
@@ -625,7 +585,7 @@ function renderTasks(){
                 </span>
               </div>`).join('')}
           </div>
-          <div class="kadd"><input id="${list.id}New" placeholder="Add task…"><button class="small" style="background:var(--brand);color:var(--btn-text)" onclick="addTask('${list.id}')"><i class="ri-add-line"></i></button></div>
+          <div class="kadd"><input id="${list.id}New" placeholder="Add task…"><button class="small brand" onclick="addTask('${list.id}')"><i class="ri-add-line"></i></button></div>
         </div>`).join('')}
     </div>`;
 }
@@ -714,26 +674,27 @@ function delCogs(i){const cogs=load('cogs',[]); cogs.splice(i,1); save('cogs',co
 
 /* ---------- Settings (Users) ---------- */
 function renderSettings(){
+  const canManage = session.role==='admin' || session.role==='manager';
   return `
     <h1>Settings</h1>
+    ${canManage?`
     <form class="form" id="userForm" enctype="multipart/form-data">
       <input class="field-3" id="uName" placeholder="Full name">
       <input class="field-3" id="uUser" placeholder="Username">
-      <input class="field-3" id="uEmail" placeholder="Email (for login)">
+      <input class="field-3" id="uEmail" placeholder="Email (optional)">
       <input class="field-3" id="uPhone" placeholder="Contact">
-      <select class="field-3" id="uRole"><option>user</option><option>staff</option><option>manager</option><option selected>admin</option></select>
+      <select class="field-3" id="uRole"><option>user</option><option>staff</option><option>manager</option><option>admin</option></select>
       <input class="field-6" id="uPass" placeholder="Password" type="password">
       <input class="field-6" id="uImg" type="file" accept="image/*">
       <button class="btn field-12" type="submit">Add User</button>
-      <div class="field-12" style="color:var(--muted)">Tip: To allow login, create the same email/password in Firebase Auth → Users.</div>
-    </form>
+    </form>`:`<div class="note">You can view users. Only admins/managers can add or edit users.</div>`}
 
-    <div class="users" style="display:grid; gap:10px; margin-top:12px">
+    <div class="users">
       ${S.users.map((u,i)=>`
         <div class="card ucard">
           <img src="${u.img||''}" class="uimg" alt="">
           <div style="flex:1">
-            <div class="card-title">${u.name} <span class="badge" style="margin-left:6px;background:rgba(14,165,165,.12);color:var(--brand)">${u.role}</span></div>
+            <div class="card-title">${u.name} <span class="badge role ${u.role}" style="margin-left:6px">${u.role}</span></div>
             <div class="card-sub">
               <div><strong>Username:</strong> ${u.username || '—'}</div>
               <div><strong>Email:</strong> ${u.email || '—'}</div>
@@ -741,24 +702,27 @@ function renderSettings(){
             </div>
           </div>
           <div class="card-actions" style="position:static">
+            ${canManage?`
             <button class="icon-btn edit" onclick="editUser(${i})"><i class="ri-edit-2-line"></i></button>
-            <button class="icon-btn delete" onclick="delUser(${i})"><i class="ri-delete-bin-6-line"></i></button>
+            <button class="icon-btn delete" onclick="delUser(${i})"><i class="ri-delete-bin-6-line"></i></button>`:''}
           </div>
         </div>`).join('')}
     </div>`;
 }
 function wireSettings(){
   const f=q('#userForm'); if(!f) return;
-  const phone=q('#uPhone'); phone.oninput=()=>{phone.value=formatPhone(phone.value);};
+  const phone=q('#uPhone'); if(phone) phone.oninput=()=>{phone.value=formatPhone(phone.value);};
+  if(!f) return;
   f.onsubmit=async(e)=>{e.preventDefault();
     const name=q('#uName').value.trim(), username=q('#uUser').value.trim().toLowerCase();
     if(!name || !username) return showNotif('Name and username required');
-    const role=q('#uRole').value, contact=formatPhone(q('#uPhone').value), password=q('#uPass').value, email=(q('#uEmail').value||'').trim();
+    const role=q('#uRole').value, contact=formatPhone(q('#uPhone').value||''), password=q('#uPass').value, email=(q('#uEmail').value||'').trim();
     const file=q('#uImg').files[0];
-    const users=load('users',DEMO.users);
+    const users=load('users',[DEFAULT_ADMIN,DEFAULT_MANAGER]);
     if(users.some(u=>(u.username||'').toLowerCase()===username)){ showNotif('Username already exists'); return; }
     let img=''; if(file) img=await compressImage(file, 1000, 1000, 0.8);
     users.push({name,username,email,contact,role,password,img}); save('users',users);
+    if (email) ensureUsernameMapping(username, email).catch(()=>{});
     showNotif('User added'); renderApp();
   };
 }
@@ -779,20 +743,21 @@ function editUser(i){
     </form>`);
   q('#eUP').oninput=()=>{q('#eUP').value=formatPhone(q('#eUP').value);};
   q('#eu').onsubmit=async(e)=>{e.preventDefault();
-    const users=load('users',DEMO.users); const rec=users[i];
+    const users=load('users',[DEFAULT_ADMIN,DEFAULT_MANAGER]); const rec=users[i];
     const newUsername=q('#eUU').value.trim().toLowerCase(); if(!newUsername) return;
     if(users.some((x,idx)=>idx!==i && (x.username||'').toLowerCase()===newUsername)){ showNotif('Username already exists'); return; }
     rec.name=q('#eUN').value.trim(); rec.username=newUsername; rec.email=q('#eUE').value.trim(); rec.contact=formatPhone(q('#eUP').value);
     rec.role=q('#eUR').value; rec.password=q('#eUPW').value;
     const f=q('#eUImg').files[0]; if(f){ rec.img=await compressImage(f, 1000, 1000, 0.8); }
-    save('users',users); showNotif('User updated'); closeModal(); renderApp();
+    save('users',users);
+    if (rec.email) ensureUsernameMapping(rec.username, rec.email).catch(()=>{});
+    showNotif('User updated'); closeModal(); renderApp();
   };
 }
-function delUser(i){const users=load('users',DEMO.users); users.splice(i,1); save('users',users); showNotif('User deleted'); renderApp();}
+function delUser(i){const users=load('users',[DEFAULT_ADMIN,DEFAULT_MANAGER]); users.splice(i,1); save('users',users); showNotif('User deleted'); renderApp();}
 
-/* ---------- Posts edit/del (restricted to admin/manager) ---------- */
+/* ---------- Posts edit/del ---------- */
 function editPost(i){
-  if(!session || (session.role==='user')) return;
   const p=S.posts[i];
   openModal(`
     <h2>Edit Post</h2>
@@ -810,7 +775,7 @@ function editPost(i){
     save('posts',posts); showNotif('Post updated'); closeModal(); renderApp();
   };
 }
-function delPost(i){ if(!session || (session.role==='user')) return; const posts=load('posts',[]); posts.splice(i,1); save('posts',posts); showNotif('Post deleted'); renderApp();}
+function delPost(i){const posts=load('posts',[]); posts.splice(i,1); save('posts',posts); showNotif('Post deleted'); renderApp();}
 
 /* ---------- Modal & misc ---------- */
 function openModal(html){const m=q('#modal'); q('#modalInner').innerHTML=html; m.style.display='flex'; m.onclick=e=>{ if(e.target===m) closeModal(); };}
@@ -831,47 +796,78 @@ function doSearch(term){
   if(!hits.length){showNotif('No results'); return;}
   openModal(`<h2>Search results</h2><div class="grid auto">${hits.map(h=>`<div class="card" onclick="jump('${h.type}')">${h.label}</div>`).join('')}</div><div style="margin-top:10px"><button class="small" onclick="closeModal()">Close</button></div>`);
 }
-function jump(type){closeModal(); page=type; save('page',page); if(window.innerWidth<=900){ UI.sidebarOpen=false; save('ui',UI);} renderApp();}
+function jump(type){closeModal(); page=type; save('page',page); if(window.innerWidth<=900) closeSidebarIfMobile(); renderApp();}
 
 /* ===== Boot ===== */
-function afterRender(){
-  const gs=q('#globalSearch'); if(gs){ gs.onkeyup=e=>{ if(e.key==='Enter') doSearch(gs.value.trim()); }; }
-  const canPost = session && (session.role==='admin' || session.role==='manager');
-  if(page==='dashboard') wireDashboard(canPost);
-  if(page==='inventory') wireInventory();
-  if(page==='sushi') wireSushi();
-  if(page==='vendors') wireVendors();
-  if(page==='tasks') wireTasks();
-  if(page==='cogs') wireCogs();
-  if(page==='settings') wireSettings();
+function renderLogin(){
+  applyTheme();
+  q('#root').innerHTML=`
+    <div class="login-bg">
+      <form class="login-form" id="loginForm" autocomplete="off">
+        <h1><i class="ri-leaf-fill"></i> Sushi POS</h1>
+        <input type="text" id="id" placeholder="Username or Email" required autofocus>
+        <input type="password" id="password" placeholder="Password" required>
+        <button type="submit">Login</button>
+        <div class="error" id="loginError"></div>
+      </form>
+      <div class="hint-mobile">Tip: on mobile/tablet, tap the <b>☰ menu</b> icon in the top-left to open the sidebar.</div>
+    </div>`;
+  q('#loginForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const id = q('#id').value.trim().toLowerCase();
+    const pw = q('#password').value;
+
+    let email = id.includes('@') ? id : null;
+    if (!email) {
+      try {
+        const mapDoc = await db.collection('usernames').doc(id).get();
+        if (mapDoc.exists) email = (mapDoc.data().email || '').toLowerCase();
+      } catch {}
+    }
+
+    try {
+      if (!email) throw new Error('Use email or a mapped username.');
+      await auth.signInWithEmailAndPassword(email, pw);
+      await cloudLoadAll();
+      const users = load('users', [DEFAULT_ADMIN,DEFAULT_MANAGER]);
+      const prof = users.find(u => (u.email||'').toLowerCase()===email);
+      session = prof ? {...prof} : {
+        name: SUPER_ADMINS.includes(email)?'Admin':'User',
+        username: (email.split('@')[0] || 'user'),
+        email, contact:'', role: SUPER_ADMINS.includes(email)?'admin':'user', password:'', img:''
+      };
+      save('session', session);
+      showNotif('Login successful'); renderApp(); cloudSubscribe();
+    } catch (err) {
+      if (err.code === 'auth/user-not-found') {
+        q('#loginError').textContent = 'Account not found in Firebase Auth.';
+      } else {
+        q('#loginError').textContent = err.message || 'Invalid credentials';
+      }
+    }
+  };
 }
 
-// Auth boot
+// Use Firebase auth state for boot flow
 auth.onAuthStateChanged(async (user) => {
   applyTheme();
   if (user) {
     try { await cloudLoadAll(); } catch {}
-    const users = load('users', DEMO.users);
+    const users = load('users', [DEFAULT_ADMIN,DEFAULT_MANAGER]);
     const email = (user.email || '').toLowerCase();
 
     // find or create local profile
     let prof = users.find(u => (u.email || '').toLowerCase() === email);
     if (!prof) {
-      // auto-create local profile for first sign-in
       const role = SUPER_ADMINS.includes(email) ? 'admin' : 'user';
       prof = {
         name: role === 'admin' ? 'Admin' : 'User',
         username: (email.split('@')[0] || 'user'),
-        email,
-        contact: '',
-        role,
-        password: '',
-        img: ''
+        email, contact: '', role, password: '', img: ''
       };
       users.push(prof);
       save('users', users);
     } else {
-      // upgrade to admin if super admin email
       if (SUPER_ADMINS.includes(email) && prof.role !== 'admin') {
         prof.role = 'admin';
         save('users', users);
@@ -887,3 +883,15 @@ auth.onAuthStateChanged(async (user) => {
     if (session) { renderApp(); } else { renderLogin(); }
   }
 });
+
+/* afterRender hooks */
+function afterRender(){
+  const gs=q('#globalSearch'); if(gs){ gs.onkeyup=e=>{ if(e.key==='Enter') doSearch(gs.value.trim()); }; }
+  if(page==='dashboard') wireDashboard();
+  if(page==='inventory') wireInventory();
+  if(page==='sushi') wireSushi();
+  if(page==='vendors') wireVendors();
+  if(page==='tasks') wireTasks();
+  if(page==='cogs') wireCogs();
+  if(page==='settings') wireSettings();
+}
