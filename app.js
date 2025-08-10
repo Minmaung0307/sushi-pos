@@ -11,10 +11,8 @@ const auth = firebase.auth();
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 const notify = (msg, type='ok') => {
-  const n = $('#notification');
-  if (!n) return;
-  n.textContent = msg;
-  n.className = `notification show ${type}`;
+  const n = $('#notification'); if (!n) return;
+  n.textContent = msg; n.className = `notification show ${type}`;
   setTimeout(()=> n.className='notification', 2200);
 };
 function save(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
@@ -22,12 +20,14 @@ function load(key, fallback){ try { return JSON.parse(localStorage.getItem(key))
 
 // --- Globals & Prefill --------------------------------------------------------
 const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com'];
+let session = load('session', null);
+let currentRoute = load('_route', 'dashboard');
+let searchQuery = load('_searchQ', '');
 
-// Prefill on first run (localStorage only) + add inventory.type
+// Prefill localStorage (one-time)
 (function seedOnFirstRun(){
   if (load('_seeded', false)) return;
   const now = Date.now();
-
   const users = [
     { name:'Admin', username:'admin', email:'admin@sushi.com', contact:'', role:'admin', password:'', img:'' },
     { name:'Manager', username:'manager', email:'minmaung0307@gmail.com', contact:'', role:'manager', password:'', img:'' },
@@ -54,32 +54,22 @@ const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com'];
     { id:'c1', date:'2025-08-01', grossIncome: 1200, produceCost: 280, itemCost: 180, freight: 45, delivery: 30, other: 20 },
     { id:'c2', date:'2025-08-02', grossIncome:  900, produceCost: 220, itemCost: 140, freight: 30, delivery: 25, other: 10 }
   ];
-
-  save('users', users);
-  save('inventory', inventory);
-  save('products', products);
-  save('posts', posts);
-  save('tasks', tasks);
-  save('cogs', cogs);
+  save('users', users); save('inventory', inventory); save('products', products);
+  save('posts', posts); save('tasks', tasks); save('cogs', cogs);
   save('_seeded', true);
 })();
 
-// --- Session / Theme ----------------------------------------------------------
-let session = load('session', null);
-let currentRoute = load('_route', 'dashboard');
-
-// Simpler theme controls (mode + font size)
+// --- Theme --------------------------------------------------------------------
 const THEME_MODES = [
   { key:'light', name:'Light' },
   { key:'dark',  name:'Dark'  },
-  { key:'aqua',  name:'Aqua'  } // default (same as “dark aqua”)
+  { key:'aqua',  name:'Aqua'  } // default (dark aqua)
 ];
 const THEME_SIZES = [
   { key:'small',  pct: 90, label:'Small' },
   { key:'medium', pct:100, label:'Medium' },
   { key:'large',  pct:112, label:'Large' }
 ];
-
 function getTheme(){ return load('_theme2', { mode:'aqua', size:'medium' }); }
 function applyTheme(){
   const t = getTheme();
@@ -89,10 +79,10 @@ function applyTheme(){
 }
 applyTheme();
 
-// --- Router helpers -----------------------------------------------------------
+// --- Router -------------------------------------------------------------------
 function go(route){ currentRoute = route; save('_route', route); renderApp(); }
 
-// --- Idle auto-logout (10 minutes) -------------------------------------------
+// --- Idle auto-logout (10 min) -----------------------------------------------
 let idleTimer = null;
 const IDLE_LIMIT = 10 * 60 * 1000;
 function resetIdleTimer(){
@@ -164,7 +154,7 @@ function renderLogin() {
 }
 async function doLogout(){ await auth.signOut(); notify('Signed out'); }
 
-// --- Sidebar (with Global Search + Links + Socials) ---------------------------
+// --- Sidebar + Search ---------------------------------------------------------
 function renderSidebar(active='dashboard'){
   const links = [
     { route:'dashboard', icon:'ri-dashboard-line', label:'Dashboard' },
@@ -226,16 +216,26 @@ function hookSidebarInteractions(){
     a.onclick = ()=> { const r = a.getAttribute('data-route'); if (r) { go(r); closeSidebar(); } };
   });
 
-  // Global search
+  // Global search -> shows mini suggestions AND opens Search page in main pane
   const input = $('#globalSearch');
   const results = $('#searchResults');
   const indexData = buildSearchIndex();
   let searchTimer;
 
-  // Ensure input is focusable
   input.removeAttribute('disabled');
   input.style.pointerEvents = 'auto';
-  input.addEventListener('focus', ()=> results.classList.remove('active'));
+
+  const openResultsPage = (q)=>{
+    searchQuery = q; save('_searchQ', q);
+    if (currentRoute !== 'search') go('search'); else renderApp();
+  };
+
+  input.addEventListener('keydown', (e)=>{
+    if (e.key === 'Enter') {
+      const q = input.value.trim();
+      if (q) { openResultsPage(q); results.classList.remove('active'); input.blur(); closeSidebar(); }
+    }
+  });
 
   input.addEventListener('input', () => {
     clearTimeout(searchTimer);
@@ -252,13 +252,16 @@ function hookSidebarInteractions(){
 
       $$('.search-results .result').forEach(row => {
         row.onclick = () => {
-          const route = row.getAttribute('data-route');
-          const id = row.getAttribute('data-id') || null;
+          const r = row.getAttribute('data-route');
+          const id = row.getAttribute('data-id') || '';
+          const label = row.textContent.trim();
+          // Put the exact search into the search page for context
+          openResultsPage(label);
           results.classList.remove('active');
           input.value = '';
-          go(route);
-          if (id) setTimeout(()=> scrollToRow(id), 50);
           closeSidebar();
+          // Optional: scroll later by id if available
+          if (id) setTimeout(()=> scrollToRow(id), 80);
         };
       });
     }, 120);
@@ -278,19 +281,19 @@ function buildSearchIndex(){
   const posts = load('posts', []);
   const tasks = load('tasks', []);
   const cogs = load('cogs', []);
-  const index = [];
-  inventory.forEach(x => index.push({section:'Inventory', route:'inventory', id:x.id, label:`${x.name} (${x.code})`, haystack:`${x.name} ${x.code} ${x.type}`.toLowerCase()}));
-  products.forEach(x => index.push({section:'Products', route:'products', id:x.id, label:`${x.name} ($${x.price.toFixed(2)})`, haystack:`${x.name} ${x.barcode} ${x.ingredients} ${x.type}`.toLowerCase()}));
-  users.forEach(x => index.push({section:'Users', route:'settings', id:x.email, label:`${x.name} – ${x.role}`, haystack:`${x.name} ${x.username} ${x.email} ${x.role}`.toLowerCase()}));
-  posts.forEach(x => index.push({section:'Posts', route:'dashboard', id:x.id, label:x.title, haystack:`${x.title} ${x.body}`.toLowerCase()}));
-  tasks.forEach(x => index.push({section:'Tasks', route:'tasks', id:x.id, label:`${x.title} (${x.status})`, haystack:`${x.title} ${x.status}`.toLowerCase()}));
-  cogs.forEach(x => index.push({section:'COGS', route:'cogs', id:x.id, label:`COGS ${x.date}`, haystack:`${x.date}`.toLowerCase()}));
-  return index;
+  const idx = [];
+  inventory.forEach(x => idx.push({section:'Inventory', route:'inventory', id:x.id, label:`${x.name} (${x.code})`, haystack:`${x.name} ${x.code} ${x.type}`.toLowerCase()}));
+  products.forEach(x => idx.push({section:'Products', route:'products', id:x.id, label:`${x.name} ($${x.price.toFixed(2)})`, haystack:`${x.name} ${x.barcode} ${x.ingredients} ${x.type}`.toLowerCase()}));
+  users.forEach(x => idx.push({section:'Users', route:'settings', id:x.email, label:`${x.name} – ${x.role}`, haystack:`${x.name} ${x.username} ${x.email} ${x.role}`.toLowerCase()}));
+  posts.forEach(x => idx.push({section:'Posts', route:'dashboard', id:x.id, label:x.title, haystack:`${x.title} ${x.body}`.toLowerCase()}));
+  tasks.forEach(x => idx.push({section:'Tasks', route:'tasks', id:x.id, label:`${x.title} (${x.status})`, haystack:`${x.title} ${x.status}`.toLowerCase()}));
+  cogs.forEach(x => idx.push({section:'COGS', route:'cogs', id:x.id, label:`COGS ${x.date}`, haystack:`${x.date}`.toLowerCase()}));
+  return idx;
 }
-function searchAll(index, q){ return index.filter(i => i.haystack.includes(q)); }
+function searchAll(index, q){ return index.filter(i => i.haystack.includes(q.toLowerCase())); }
 function scrollToRow(id){ const el = document.getElementById(id); if (el) el.scrollIntoView({behavior:'smooth', block:'center'}); }
 
-// --- Header / Burger ----------------------------------------------------------
+// --- Topbar / Burger ----------------------------------------------------------
 function renderTopbar(){
   return `
     <div class="topbar">
@@ -309,10 +312,40 @@ function renderTopbar(){
 function openSidebar(){ $('#sidebar')?.classList.add('open'); $('#backdrop')?.classList.add('active'); }
 function closeSidebar(){ $('#sidebar')?.classList.remove('open'); $('#backdrop')?.classList.remove('active'); }
 
-// --- View renderers -----------------------------------------------------------
+// --- Views --------------------------------------------------------------------
 const USD = x => `$${Number(x||0).toFixed(2)}`;
 
-// Dashboard
+// Search page (main pane)
+function viewSearch(){
+  const q = searchQuery || '';
+  const index = buildSearchIndex();
+  const out = q ? searchAll(index, q) : [];
+  return `
+    <div class="card">
+      <div class="card-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="margin:0">Search</h3>
+          <div style="color:var(--muted)">Query: <strong>${q || '(empty)'}</strong></div>
+        </div>
+        ${out.length ? `
+          <div class="grid">
+            ${out.map(r => `
+              <div class="card">
+                <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
+                  <div>
+                    <div style="font-weight:700">${r.label}</div>
+                    <div style="color:var(--muted);font-size:12px">${r.section}</div>
+                  </div>
+                  <button class="btn" data-go="${r.route}" data-id="${r.id||''}">Open</button>
+                </div>
+              </div>`).join('')}
+          </div>` : `<p style="color:var(--muted)">No results.</p>`}
+      </div>
+    </div>
+  `;
+}
+
+// Dashboard (unchanged tiles + posts modal)
 function viewDashboard(){
   const posts = load('posts', []);
   const inv = load('inventory', []);
@@ -356,7 +389,7 @@ function viewDashboard(){
   `;
 }
 
-// Inventory (added Type column + big hover)
+// Inventory with header bg
 function viewInventory(){
   const items = load('inventory', []);
   return `
@@ -412,7 +445,7 @@ function viewInventory(){
   `;
 }
 
-// Products (image hover + click image opens card; name is plain text)
+// Products with header bg
 function viewProducts(){
   const items = load('products', []);
   return `
@@ -457,7 +490,7 @@ function viewProducts(){
   `;
 }
 
-// COGS
+// COGS with header bg + total bg
 function viewCOGS(){
   const rows = load('cogs', []);
   const totals = rows.reduce((a,r)=>({
@@ -502,7 +535,7 @@ function viewCOGS(){
                     }
                   </td>
                 </tr>`).join('')}
-              <tr>
+              <tr class="tr-total">
                 <th>Total</th>
                 <th>${USD(totals.grossIncome)}</th>
                 <th>${USD(totals.produceCost)}</th>
@@ -522,11 +555,11 @@ function viewCOGS(){
   `;
 }
 
-// Tasks – rows with drag & drop
+// Tasks as full-width lanes + DnD highlight both ways
 function viewTasks(){
   const items = load('tasks', []);
   const lane = (key, label)=>`
-    <div class="card" data-lane="${key}">
+    <div class="card lane-row" data-lane="${key}">
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <h3 style="margin:0">${label}</h3>
@@ -534,7 +567,7 @@ function viewTasks(){
         </div>
         <div class="grid" id="lane-${key}">
           ${items.filter(t=>t.status===key).map(t=>`
-            <div class="card" id="${t.id}" draggable="true" data-task="${t.id}">
+            <div class="card task-card" id="${t.id}" draggable="true" data-task="${t.id}">
               <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
                 <div>${t.title}</div>
                 <div>
@@ -550,7 +583,7 @@ function viewTasks(){
     </div>
   `;
   return `
-    <div class="grid cols-3" data-section="tasks">
+    <div data-section="tasks">
       ${lane('todo','To do')}
       ${lane('inprogress','In progress')}
       ${lane('done','Done')}
@@ -559,12 +592,12 @@ function viewTasks(){
   `;
 }
 
-// Settings (Theme dropdowns above Users)
+// Settings (Theme full width above Users full width)
 function viewSettings(){
   const users = load('users', []);
   const theme = getTheme();
   return `
-    <div class="grid cols-2">
+    <div class="grid">
       <div class="card">
         <div class="card-body">
           <h3 style="margin-top:0">Theme</h3>
@@ -616,12 +649,21 @@ function viewSettings(){
   `;
 }
 
-// Static pages
+// Static pages + Contact form
 const pageContent = {
   policy: `<h3>Policy</h3><p>Our basic privacy and data usage policy for Sushi POS.</p>`,
   license:`<h3>License</h3><p>Permissive license for your restaurant use.</p>`,
   setup:  `<h3>Setup Guide</h3><ol><li>Create Firebase Auth users.</li><li>Sign in as admin/manager.</li><li>Use Settings to set roles & theme.</li></ol>`,
-  contact:`<h3>Contact</h3><p>Email support@sushipos.example</p>`
+  contact:`<h3>Contact</h3>
+    <p>Got a question? Send us a message.</p>
+    <div class="grid cols-2">
+      <input id="ct-name" class="input" placeholder="Your name" />
+      <input id="ct-email" class="input" type="email" placeholder="Your email" />
+    </div>
+    <textarea id="ct-msg" class="input" rows="5" placeholder="Message"></textarea>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px">
+      <button id="ct-send" class="btn"><i class="ri-send-plane-line"></i> Send</button>
+    </div>`
 };
 function viewPage(key){ return `<div class="card"><div class="card-body">${pageContent[key]||'<p>Page</p>'}</div></div>`; }
 
@@ -790,6 +832,7 @@ function renderApp(){
             : currentRoute==='cogs'      ? viewCOGS()
             : currentRoute==='tasks'     ? viewTasks()
             : currentRoute==='settings'  ? viewSettings()
+            : currentRoute==='search'    ? viewSearch()
             : viewPage(currentRoute) }
         </div>
       </div>
@@ -807,7 +850,16 @@ function renderApp(){
   // Dashboard tiles click-through
   $$('.tile').forEach(t=>{ t.onclick = ()=> { const r=t.getAttribute('data-go'); if (r) go(r); }; });
 
-  // Wire section handlers with event delegation (edit/delete work everywhere)
+  // Search "Open" buttons in main pane
+  $$('#main [data-go]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const r = btn.getAttribute('data-go'); const id = btn.getAttribute('data-id');
+      go(r);
+      if (id) setTimeout(()=> scrollToRow(id), 80);
+    };
+  });
+
+  // Wire sections
   wirePosts();
   wireInventory();
   wireProducts();
@@ -817,7 +869,22 @@ function renderApp(){
   wireTheme();
   wireProductCardClicks();
   setupDnD();
-  
+
+  // Contact form
+  if (currentRoute==='contact') {
+    $('#ct-send')?.addEventListener('click', ()=>{
+      const name = $('#ct-name').value.trim();
+      const email = $('#ct-email').value.trim();
+      const msg = $('#ct-msg').value.trim();
+      if (!name || !email || !msg) return notify('Please fill all fields','warn');
+      const list = load('contact_msgs', []);
+      list.push({ id: 'm_'+Date.now(), name, email, msg, at: Date.now() });
+      save('contact_msgs', list);
+      $('#ct-name').value=''; $('#ct-email').value=''; $('#ct-msg').value='';
+      notify('Message sent! (stored locally)');
+    });
+  }
+
   // Close modal buttons
   $$('[data-close]').forEach(b=> b.onclick = ()=> closeModal(b.getAttribute('data-close')));
 }
@@ -1032,13 +1099,21 @@ function wireCOGS(){
   });
 }
 
-// Tasks with DnD
+// Tasks DnD (bi-directional) + highlight
 function setupDnD(){
-  ['todo','inprogress','done'].forEach(k=>{
+  const lanes = ['todo','inprogress','done'];
+  lanes.forEach(k=>{
     const lane = $('#lane-'+k); if (!lane) return;
-    lane.ondragover = (e)=>{ e.preventDefault(); };
+
+    // Highlight parent card on drag over
+    const parentCard = lane.closest('.lane-row');
+
+    lane.ondragover = (e)=>{ e.preventDefault(); parentCard?.classList.add('drop'); };
+    lane.ondragenter = (e)=>{ e.preventDefault(); parentCard?.classList.add('drop'); };
+    lane.ondragleave = ()=> { parentCard?.classList.remove('drop'); };
     lane.ondrop = (e)=>{
       e.preventDefault();
+      parentCard?.classList.remove('drop');
       const id = e.dataTransfer.getData('text/plain');
       const items = load('tasks', []);
       const t = items.find(x=>x.id===id); if (!t) return;
