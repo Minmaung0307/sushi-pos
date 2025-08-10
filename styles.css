@@ -215,7 +215,7 @@ body {
 .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
 .grid.auto { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 
-/* Dashboard tiles clickable */
+/* Dashboard tiles clickable — smaller on mobile */
 .tile { padding: 16px; display: grid; gap: 6px; cursor: pointer; }
 .tile:hover { background: var(--panel-2); }
 
@@ -227,7 +227,7 @@ body {
 .tr-danger { background: rgba(239, 68, 68, .16); }
 .tr-total th, .tr-total td { background: var(--tfoot); font-weight: 700; }
 
-/* Image hover preview */
+/* Image hover preview (desktop/tablet default) */
 .thumb-wrap { position: relative; width: 44px; height: 44px; }
 .thumb {
   width: 44px; height: 44px; object-fit: cover; border-radius: 10px; border: 1px solid var(--card-border);
@@ -245,6 +245,11 @@ body {
   transition: transform .12s ease, opacity .12s ease;
   z-index: 20;
 }
+
+/* Modal image preview for phones */
+.img-modal .dialog { width: min(520px, 94vw); }
+.img-modal .imgbox { width: 100%; max-height: 70vh; display: grid; place-items: center; }
+.img-modal .imgbox img { width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--card-border); }
 
 /* Modals */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; z-index: 80; }
@@ -287,6 +292,24 @@ body {
     z-index: 75;
   }
   .sidebar.open { transform: translateX(0); }
+}
+
+/* iPhone/iPad tweaks */
+@media (max-width: 740px) {
+  .main { padding: 14px; }
+
+  /* Dashboard tiles: smaller & 2 per row */
+  .grid.cols-4.auto { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .tile h2 { font-size: 20px; }
+  .tile div { font-size: 12px; }
+
+  /* Posts remain full width by default */
+
+  /* Hover preview becomes smaller; click opens modal (handled in JS) */
+  .thumb-large {
+    left: 8px; top: -4px;
+    width: 140px; height: 140px;
+  }
 }
 
 /* Tasks lanes as full-width rows + DnD highlight */

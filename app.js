@@ -211,12 +211,10 @@ function renderSidebar(active='dashboard'){
 }
 
 function hookSidebarInteractions(){
-  // nav clicks (close after click)
   $$('.sidebar .item').forEach(a => {
     a.onclick = ()=> { const r = a.getAttribute('data-route'); if (r) { go(r); closeSidebar(); } };
   });
 
-  // Global search -> shows mini suggestions AND opens Search page in main pane
   const input = $('#globalSearch');
   const results = $('#searchResults');
   const indexData = buildSearchIndex();
@@ -255,12 +253,10 @@ function hookSidebarInteractions(){
           const r = row.getAttribute('data-route');
           const id = row.getAttribute('data-id') || '';
           const label = row.textContent.trim();
-          // Put the exact search into the search page for context
           openResultsPage(label);
           results.classList.remove('active');
           input.value = '';
           closeSidebar();
-          // Optional: scroll later by id if available
           if (id) setTimeout(()=> scrollToRow(id), 80);
         };
       });
@@ -273,25 +269,6 @@ function hookSidebarInteractions(){
     }
   });
 }
-
-function buildSearchIndex(){
-  const inventory = load('inventory', []);
-  const products = load('products', []);
-  const users = load('users', []);
-  const posts = load('posts', []);
-  const tasks = load('tasks', []);
-  const cogs = load('cogs', []);
-  const idx = [];
-  inventory.forEach(x => idx.push({section:'Inventory', route:'inventory', id:x.id, label:`${x.name} (${x.code})`, haystack:`${x.name} ${x.code} ${x.type}`.toLowerCase()}));
-  products.forEach(x => idx.push({section:'Products', route:'products', id:x.id, label:`${x.name} ($${x.price.toFixed(2)})`, haystack:`${x.name} ${x.barcode} ${x.ingredients} ${x.type}`.toLowerCase()}));
-  users.forEach(x => idx.push({section:'Users', route:'settings', id:x.email, label:`${x.name} – ${x.role}`, haystack:`${x.name} ${x.username} ${x.email} ${x.role}`.toLowerCase()}));
-  posts.forEach(x => idx.push({section:'Posts', route:'dashboard', id:x.id, label:x.title, haystack:`${x.title} ${x.body}`.toLowerCase()}));
-  tasks.forEach(x => idx.push({section:'Tasks', route:'tasks', id:x.id, label:`${x.title} (${x.status})`, haystack:`${x.title} ${x.status}`.toLowerCase()}));
-  cogs.forEach(x => idx.push({section:'COGS', route:'cogs', id:x.id, label:`COGS ${x.date}`, haystack:`${x.date}`.toLowerCase()}));
-  return idx;
-}
-function searchAll(index, q){ return index.filter(i => i.haystack.includes(q.toLowerCase())); }
-function scrollToRow(id){ const el = document.getElementById(id); if (el) el.scrollIntoView({behavior:'smooth', block:'center'}); }
 
 // --- Topbar / Burger ----------------------------------------------------------
 function renderTopbar(){
@@ -315,7 +292,7 @@ function closeSidebar(){ $('#sidebar')?.classList.remove('open'); $('#backdrop')
 // --- Views --------------------------------------------------------------------
 const USD = x => `$${Number(x||0).toFixed(2)}`;
 
-// Search page (main pane)
+// Search page
 function viewSearch(){
   const q = searchQuery || '';
   const index = buildSearchIndex();
@@ -345,7 +322,7 @@ function viewSearch(){
   `;
 }
 
-// Dashboard (unchanged tiles + posts modal)
+// Dashboard — tiles smaller (CSS handles); posts full width already
 function viewDashboard(){
   const posts = load('posts', []);
   const inv = load('inventory', []);
@@ -389,7 +366,7 @@ function viewDashboard(){
   `;
 }
 
-// Inventory with header bg
+// Inventory
 function viewInventory(){
   const items = load('inventory', []);
   return `
@@ -410,7 +387,7 @@ function viewInventory(){
                 return `<tr id="${it.id}" class="${warnClass}">
                   <td>
                     <div class="thumb-wrap">
-                      ${it.img?`<img class="thumb" src="${it.img}" alt=""/>`:`<div class="thumb" style="display:grid;place-items:center">🍙</div>`}
+                      ${it.img?`<img class="thumb inv-preview" data-src="${it.img}" alt=""/>`:`<div class="thumb inv-preview" data-src="icons/icon-512.png" style="display:grid;place-items:center">🍙</div>`}
                       <img class="thumb-large" src="${it.img||'icons/icon-512.png'}" alt=""/>
                     </div>
                   </td>
@@ -442,10 +419,11 @@ function viewInventory(){
       </div>
     </div>
     ${invModal()}
+    ${imgPreviewModal()}
   `;
 }
 
-// Products with header bg
+// Products
 function viewProducts(){
   const items = load('products', []);
   return `
@@ -465,7 +443,7 @@ function viewProducts(){
                 <tr id="${it.id}">
                   <td>
                     <div class="thumb-wrap">
-                      ${it.img?`<img class="thumb prod-thumb" data-card="${it.id}" src="${it.img}" alt=""/>`:`<div class="thumb prod-thumb" data-card="${it.id}" style="display:grid;place-items:center;cursor:pointer">🍤</div>`}
+                      ${it.img?`<img class="thumb prod-thumb prod-preview" data-card="${it.id}" data-src="${it.img}" alt=""/>`:`<div class="thumb prod-thumb prod-preview" data-card="${it.id}" data-src="icons/icon-512.png" style="display:grid;place-items:center;cursor:pointer">🍤</div>`}
                       <img class="thumb-large" src="${it.img||'icons/icon-512.png'}" alt=""/>
                     </div>
                   </td>
@@ -487,10 +465,11 @@ function viewProducts(){
     </div>
     ${prodModal()}
     ${prodCardModal()}
+    ${imgPreviewModal()}
   `;
 }
 
-// COGS with header bg + total bg
+// COGS
 function viewCOGS(){
   const rows = load('cogs', []);
   const totals = rows.reduce((a,r)=>({
@@ -555,7 +534,7 @@ function viewCOGS(){
   `;
 }
 
-// Tasks as full-width lanes + DnD highlight both ways
+// Tasks lanes
 function viewTasks(){
   const items = load('tasks', []);
   const lane = (key, label)=>`
@@ -816,6 +795,25 @@ function userModal(){
   </div>`;
 }
 
+// ----- NEW: Image preview modal (for phones) ---------------------------------
+function imgPreviewModal(){
+  return `
+  <div class="modal-backdrop" id="mb-img"></div>
+  <div class="modal img-modal" id="m-img">
+    <div class="dialog">
+      <div class="head"><strong>Preview</strong><button class="btn ghost" data-close="m-img">Close</button></div>
+      <div class="body">
+        <div class="imgbox"><img id="preview-img" src="" alt="Preview"/></div>
+      </div>
+    </div>
+  </div>`;
+}
+function openImg(src){
+  const img = $('#preview-img'); if (!img) return;
+  img.src = src || 'icons/icon-512.png';
+  openModal('m-img');
+}
+
 // --- Render App ---------------------------------------------------------------
 function renderApp(){
   if (!session) { renderLogin(); return; }
@@ -887,6 +885,9 @@ function renderApp(){
 
   // Close modal buttons
   $$('[data-close]').forEach(b=> b.onclick = ()=> closeModal(b.getAttribute('data-close')));
+
+  // NEW: enable tap-to-enlarge on small screens for inventory/products images
+  enableMobileImagePreview();
 }
 
 function openModal(id){ $('#'+id)?.classList.add('active'); $('#mb-'+id.split('-')[1])?.classList.add('active'); }
@@ -1040,6 +1041,7 @@ function wireProducts(){
   });
 }
 
+// Add click-to-enlarge for product card click remains the same
 function wireProductCardClicks(){
   $$('.prod-thumb').forEach(el=>{
     el.style.cursor = 'pointer';
@@ -1056,6 +1058,19 @@ function wireProductCardClicks(){
       $('#pc-instructions').textContent = it.instructions||'-';
       openModal('m-card');
     };
+  });
+}
+
+// NEW: Tap-to-enlarge for phones (inventory + products)
+function enableMobileImagePreview(){
+  const isPhone = window.matchMedia('(max-width: 740px)').matches;
+  if (!isPhone) return; // hover is fine on tablets/desktop
+  $$('.inv-preview, .prod-preview').forEach(el=>{
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', ()=>{
+      const src = el.getAttribute('data-src') || 'icons/icon-512.png';
+      openImg(src);
+    });
   });
 }
 
@@ -1100,16 +1115,31 @@ function wireCOGS(){
 }
 
 // Tasks DnD (bi-directional) + highlight
+// --- Tasks DnD with movement rules -------------------------------------------
 function setupDnD(){
   const lanes = ['todo','inprogress','done'];
+
+  // Allowed moves by FROM lane
+  const allow = {
+    'todo':       new Set(['inprogress','done']),    // anywhere (except staying)
+    'inprogress': new Set(['todo','done']),          // forward or back to todo
+    'done':       new Set(['todo','inprogress'])     // back to todo or progress
+  };
+
   lanes.forEach(k=>{
     const lane = $('#lane-'+k); if (!lane) return;
-
-    // Highlight parent card on drag over
     const parentCard = lane.closest('.lane-row');
 
-    lane.ondragover = (e)=>{ e.preventDefault(); parentCard?.classList.add('drop'); };
-    lane.ondragenter = (e)=>{ e.preventDefault(); parentCard?.classList.add('drop'); };
+    lane.ondragover = (e)=>{
+      e.preventDefault();
+      const id = e.dataTransfer?.getData('text/plain');
+      if (!id) return;
+      const items = load('tasks', []);
+      const t = items.find(x=>x.id===id); if (!t) return;
+      if (allow[t.status].has(k)) parentCard?.classList.add('drop');
+      else parentCard?.classList.remove('drop');
+    };
+    lane.ondragenter = (e)=>{ e.preventDefault(); };
     lane.ondragleave = ()=> { parentCard?.classList.remove('drop'); };
     lane.ondrop = (e)=>{
       e.preventDefault();
@@ -1117,6 +1147,7 @@ function setupDnD(){
       const id = e.dataTransfer.getData('text/plain');
       const items = load('tasks', []);
       const t = items.find(x=>x.id===id); if (!t) return;
+      if (!allow[t.status].has(k)) { notify('Move not allowed','warn'); return; }
       t.status = k; save('tasks', items); renderApp();
     };
   });
@@ -1208,3 +1239,50 @@ if (session) renderApp();
 
 // Expose for debugging
 window._sushipos = { go, load, save };
+
+// --- Search helpers & jump ----------------------------------------------------
+function buildSearchIndex(){
+  const posts = load('posts', []);
+  const inv   = load('inventory', []);
+  const prods = load('products', []);
+  const cogs  = load('cogs', []);
+  const users = load('users', []);
+
+  const pages = [
+    { id:'policy',  label:'Policy',  section:'Pages', route:'policy' },
+    { id:'license', label:'License', section:'Pages', route:'license' },
+    { id:'setup',   label:'Setup Guide', section:'Pages', route:'setup' },
+    { id:'contact', label:'Contact', section:'Pages', route:'contact' },
+  ];
+
+  const ix = [];
+  posts.forEach(p => ix.push({ id:p.id, label:p.title, section:'Posts', route:'dashboard', text:`${p.title} ${p.body}` }));
+  inv.forEach(i => ix.push({ id:i.id, label:i.name, section:'Inventory', route:'inventory', text:`${i.name} ${i.code} ${i.type}` }));
+  prods.forEach(p => ix.push({ id:p.id, label:p.name, section:'Products', route:'products', text:`${p.name} ${p.barcode} ${p.type} ${p.ingredients}` }));
+  cogs.forEach(r => ix.push({ id:r.id, label:r.date, section:'COGS', route:'cogs', text:`${r.date} ${r.grossIncome} ${r.produceCost} ${r.itemCost} ${r.freight} ${r.delivery} ${r.other}` }));
+  users.forEach(u => ix.push({ id:u.email, label:u.name, section:'Users', route:'settings', text:`${u.name} ${u.email} ${u.role}` }));
+  pages.forEach(p => ix.push(p));
+  return ix;
+}
+
+function searchAll(index, q){
+  const term = q.toLowerCase();
+  // simple ranking: label hit > text hit
+  return index
+    .map(item => {
+      const labelHit = (item.label||'').toLowerCase().includes(term) ? 2 : 0;
+      const textHit  = (item.text ||'').toLowerCase().includes(term) ? 1 : 0;
+      return { item, score: labelHit + textHit };
+    })
+    .filter(x => x.score > 0)
+    .sort((a,b) => b.score - a.score)
+    .map(x => x.item);
+}
+
+function scrollToRow(id){
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+// Optional: show something instantly while Firebase auth initializes
+if (!session) renderLogin();
