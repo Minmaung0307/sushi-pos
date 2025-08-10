@@ -14,10 +14,10 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
 </head>
 <body>
-  <!-- Notification / Toast -->
+  <!-- Toast -->
   <div id="notification" class="notification"></div>
 
-  <!-- App Header -->
+  <!-- Header -->
   <header class="app-header">
     <button id="navToggle" class="icon-btn" aria-label="Toggle menu">
       <i class="ri-menu-line"></i>
@@ -41,18 +41,21 @@
     </nav>
   </header>
 
-  <!-- Main Layout -->
+  <!-- Layout -->
   <div class="layout">
     <!-- Sidebar -->
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-inner">
         <div class="userbox" id="userbox"></div>
-        <a href="#/dashboard" class="side-link"><i class="ri-dashboard-line"></i> Dashboard</a>
-        <a href="#/products"  class="side-link"><i class="ri-restaurant-line"></i> Products</a>
-        <a href="#/posts"     class="side-link"><i class="ri-newspaper-line"></i> Posts</a>
-        <a href="#/users"     class="side-link"><i class="ri-team-line"></i> Users</a>
-        <a href="#/settings"  class="side-link"><i class="ri-settings-3-line"></i> Settings</a>
-        <button id="logoutBtn" class="side-link danger"><i class="ri-logout-circle-r-line"></i> Logout</button>
+
+        <a href="#/dashboard" class="side-link"><i class="ri-dashboard-line"></i> <span>Dashboard</span></a>
+        <a href="#/inventory" class="side-link"><i class="ri-archive-2-line"></i> <span>Inventory</span></a>
+        <a href="#/products"  class="side-link"><i class="ri-restaurant-line"></i> <span>Products</span></a>
+        <a href="#/cogs"      class="side-link"><i class="ri-money-dollar-circle-line"></i> <span>COGS</span></a>
+        <a href="#/tasks"     class="side-link"><i class="ri-task-line"></i> <span>Tasks</span></a>
+        <a href="#/settings"  class="side-link"><i class="ri-settings-3-line"></i> <span>Settings</span></a>
+
+        <button id="logoutBtn" class="side-link danger"><i class="ri-logout-circle-r-line"></i> <span>Logout</span></button>
       </div>
     </aside>
 
@@ -60,7 +63,20 @@
     <main id="root" class="content"></main>
   </div>
 
-  <!-- Firebase (compat SDKs) -->
+  <!-- Global Modal -->
+  <div id="modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h3 id="modalTitle" class="modal-title"></h3>
+        <button id="modalClose" class="icon-btn"><i class="ri-close-line"></i></button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+      <div class="modal-foot" id="modalFoot"></div>
+    </div>
+  </div>
+
+  <!-- Firebase (compat) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
@@ -68,11 +84,10 @@
   <!-- App -->
   <script src="app.js"></script>
 
-  <!-- Service worker -->
+  <!-- SW -->
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js')
-        .catch(err => console.error('SW registration failed:', err));
+      navigator.serviceWorker.register('./sw.js').catch(err => console.error('SW registration failed:', err));
     }
   </script>
 </body>
