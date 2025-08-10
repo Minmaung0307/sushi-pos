@@ -67,15 +67,18 @@ window.addEventListener('appinstalled', () => {
 /* ======================
    Firebase (Auth + DB)
    ====================== */
+
 const firebaseConfig = {
   /* 🔧 REPLACE with your Firebase config (Project Settings → General → Web app) */
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_DOMAIN.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_BUCKET.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyBY52zMMQqsvssukui3TfQnMigWoOzeKGk",
+  authDomain: "sushi-pos.firebaseapp.com",
+  projectId: "sushi-pos",
+  storageBucket: "sushi-pos.firebasestorage.app",
+  messagingSenderId: "909622476838",
+  appId: "1:909622476838:web:1a1fb221a6a79fcaf4a6e7",
+  measurementId: "G-M8Q8EJ4T7Q"
 };
+
 
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
