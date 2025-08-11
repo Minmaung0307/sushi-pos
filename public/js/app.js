@@ -935,25 +935,32 @@ const pageContent = {
   policy: `
     <h3>Policy</h3>
     <div style="border:1px solid var(--card-border); border-radius:12px; overflow:hidden;">
-      <iframe src="policy.html" title="Policy" style="width:100%; height:calc(100vh - 220px); border:none;"></iframe>
+      <iframe src="/policy.html" title="Policy" style="width:100%; height:calc(100vh - 220px); border:none;"></iframe>
     </div>
   `,
 
   license: `
     <h3>License</h3>
     <div style="border:1px solid var(--card-border); border-radius:12px; overflow:hidden;">
-      <iframe src="license.html" title="License" style="width:100%; height:calc(100vh - 220px); border:none;"></iframe>
+      <iframe src="/license.html" title="License" style="width:100%; height:calc(100vh - 220px); border:none;"></iframe>
     </div>
   `,
 
   setup: `
     <h3>Setup Guide</h3>
     <div style="border:1px solid var(--card-border); border-radius:12px; overflow:hidden;">
-      <iframe src="setup-guide.html" title="Setup Guide" style="width:100%; height:calc(100vh - 220px); border:none;"></iframe>
+      <iframe src="/setup-guide.html" title="Setup Guide" style="width:100%; height:calc(100vh - 220px); border:none;"></iframe>
     </div>
     <p style="color:var(--muted); font-size:12px; margin-top:8px;">
       Tip: Open in a new tab if you want a full-page view.
     </p>
+  `,
+
+  guide: `
+    <h3>User Guide</h3>
+    <div style="border:1px solid var(--card-border); border-radius:12px; overflow:hidden;">
+      <iframe src="/user-guide.html" title="User Guide" style="width:100%; height:calc(100vh - 220px); border:none;"></iframe>
+    </div>
   `,
 
   contact: `
@@ -968,13 +975,6 @@ const pageContent = {
       <button id="ct-send" class="btn">
         <i class="ri-send-plane-line"></i> Send
       </button>
-    </div>
-  `,
-
-  guide: `
-    <h3>User Guide</h3>
-    <div style="border:1px solid var(--card-border); border-radius:12px; overflow:hidden;">
-      <iframe src="guide.html" title="User Guide" style="width:100%; height:calc(100vh - 220px); border:none;"></iframe>
     </div>
   `
 };
