@@ -932,34 +932,51 @@ function viewSettings(){
 
 // Static pages + Contact form
 const pageContent = {
-  policy: `<h3>Policy</h3><p>Our basic privacy and data usage policy for Sushi POS.</p>`,
-  license:`<h3>License</h3><p>Permissive license for your restaurant use.</p>`,
-  setup:  `<h3>Setup Guide</h3>
+  policy: `
+    <h3>Policy</h3>
     <div style="border:1px solid var(--card-border); border-radius:12px; overflow:hidden;">
-      <iframe src="setup-guide.html" style="width:100%; height: calc(100vh - 220px); border:none;"></iframe>
+      <iframe src="policy.html" title="Policy" style="width:100%; height:calc(100vh - 220px); border:none;"></iframe>
     </div>
-    <p style="color:var(--muted); font-size:12px; margin-top:8px">
-      Tip: open in a new tab if you want a full-page view.
-    </p>`,
-  contact:`<h3>Contact</h3>
+  `,
+
+  license: `
+    <h3>License</h3>
+    <div style="border:1px solid var(--card-border); border-radius:12px; overflow:hidden;">
+      <iframe src="license.html" title="License" style="width:100%; height:calc(100vh - 220px); border:none;"></iframe>
+    </div>
+  `,
+
+  setup: `
+    <h3>Setup Guide</h3>
+    <div style="border:1px solid var(--card-border); border-radius:12px; overflow:hidden;">
+      <iframe src="setup-guide.html" title="Setup Guide" style="width:100%; height:calc(100vh - 220px); border:none;"></iframe>
+    </div>
+    <p style="color:var(--muted); font-size:12px; margin-top:8px;">
+      Tip: Open in a new tab if you want a full-page view.
+    </p>
+  `,
+
+  contact: `
+    <h3>Contact</h3>
     <p>Got a question? Send us a message.</p>
     <div class="grid cols-2">
-      <input id="ct-name" class="input" placeholder="Your name" />
-      <input id="ct-email" class="input" type="email" placeholder="Your email" />
+      <input id="ct-name" class="input" placeholder="Your name" aria-label="Your name" />
+      <input id="ct-email" class="input" type="email" placeholder="Your email" aria-label="Your email" />
     </div>
-    <textarea id="ct-msg" class="input" rows="5" placeholder="Message"></textarea>
-    <div style="display:flex;justify-content:flex-end;margin-top:10px">
-      <button id="ct-send" class="btn"><i class="ri-send-plane-line"></i> Send</button>
-    </div>`,
-  guide:`<h3>User Guide</h3>
-    <p>Short video resources will appear here later.</p>
-    <ul>
-      <li>Inventory: add stock, thresholds, image hover/tap to preview.</li>
-      <li>Products: manage items; click image to open product card.</li>
-      <li>COGS: track daily costs; totals auto-calc.</li>
-      <li>Tasks: drag & drop across lanes with rules.</li>
-      <li>Settings: theme + cloud sync + users.</li>
-    </ul>`
+    <textarea id="ct-msg" class="input" rows="5" placeholder="Message" aria-label="Message"></textarea>
+    <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+      <button id="ct-send" class="btn">
+        <i class="ri-send-plane-line"></i> Send
+      </button>
+    </div>
+  `,
+
+  guide: `
+    <h3>User Guide</h3>
+    <div style="border:1px solid var(--card-border); border-radius:12px; overflow:hidden;">
+      <iframe src="guide.html" title="User Guide" style="width:100%; height:calc(100vh - 220px); border:none;"></iframe>
+    </div>
+  `
 };
 function viewPage(key){ return `<div class="card"><div class="card-body">${pageContent[key]||'<p>Page</p>'}</div></div>`; }
 
