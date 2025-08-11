@@ -1,4 +1,5 @@
-// --- Firebase (Auth only) ----------------------------------------------------
+// Part 1 — Firebase, utils, prefill, theme, Cloud (safe init)
+// --- Firebase (Auth + Firestore) --------------------------------------------
 const firebaseConfig = {
   apiKey: "AIzaSyBY52zMMQqsvssukui3TfQnMigWoOzeKGk",
   authDomain: "sushi-pos.firebaseapp.com",
@@ -6,53 +7,63 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
+const db   = firebase.firestore();
+
+// Enable offline persistence (best effort)
+db.enablePersistence({ synchronizeTabs: true }).catch(()=>{ /* ignore */ });
 
 // --- DOM helpers --------------------------------------------------------------
-const $ = (sel, root=document) => root.querySelector(sel);
+const $  = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 const notify = (msg, type='ok') => {
   const n = $('#notification'); if (!n) return;
   n.textContent = msg; n.className = `notification show ${type}`;
   setTimeout(()=> n.className='notification', 2200);
 };
-function save(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
+
+// cloud is declared early; assigned later to avoid TDZ
+let cloud;
+
+// save/load stay safe whether cloud exists or not
+function save(key, val){
+  localStorage.setItem(key, JSON.stringify(val));
+  try { if (cloud && cloud.isOn && cloud.isOn()) cloud.saveKV(key, val).catch(()=>{}); } catch {}
+}
 function load(key, fallback){ try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
 
 // --- Globals & Prefill --------------------------------------------------------
 const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com'];
-let session = load('session', null);
-let currentRoute = load('_route', 'dashboard');
-let searchQuery = load('_searchQ', '');
+let session      = load('session', null);
+let currentRoute = load('_route', 'home');    // show Home first after login
+let searchQuery  = load('_searchQ', '');
 
-// Prefill localStorage (one-time)
+// Prefill (one-time, local)
 (function seedOnFirstRun(){
   if (load('_seeded', false)) return;
   const now = Date.now();
   const users = [
-    { name:'Admin', username:'admin', email:'admin@sushi.com', contact:'', role:'admin', password:'', img:'' },
-    { name:'Manager', username:'manager', email:'minmaung0307@gmail.com', contact:'', role:'manager', password:'', img:'' },
-    { name:'Cashier One', username:'cashier1', email:'cashier@sushi.com', contact:'', role:'user', password:'', img:'' },
+    { name:'Admin',   username:'admin',   email:'admin@sushi.com',            contact:'', role:'admin',   password:'', img:'' },
+    { name:'Manager', username:'manager', email:'minmaung0307@gmail.com',     contact:'', role:'manager', password:'', img:'' },
+    { name:'Cashier', username:'cashier1',email:'cashier@sushi.com',          contact:'', role:'user',    password:'', img:'' },
   ];
   const inventory = [
-    { id:'inv1', img:'', name:'Nori Sheets', code:'NOR-100', type:'Dry',   price:3.00, stock:80, threshold:30 },
-    { id:'inv2', img:'', name:'Sushi Rice',  code:'RIC-200', type:'Dry',   price:1.50, stock:24, threshold:20 },
-    { id:'inv3', img:'', name:'Fresh Salmon',code:'SAL-300', type:'Raw',   price:7.80, stock:10, threshold:12 },
+    { id:'inv1', img:'', name:'Nori Sheets',  code:'NOR-100', type:'Dry', price:3.00,  stock:80, threshold:30 },
+    { id:'inv2', img:'', name:'Sushi Rice',   code:'RIC-200', type:'Dry', price:1.50,  stock:24, threshold:20 },
+    { id:'inv3', img:'', name:'Fresh Salmon', code:'SAL-300', type:'Raw', price:7.80,  stock:10, threshold:12 },
   ];
   const products = [
-    { id:'p1', img:'', name:'Salmon Nigiri', barcode:'11100001', price:5.99, type:'Nigiri', ingredients:'Rice, Salmon', instructions:'Brush with nikiri.', card:true },
-    { id:'p2', img:'', name:'California Roll', barcode:'11100002', price:7.49, type:'Roll', ingredients:'Rice, Nori, Crab, Avocado', instructions:'8 pcs.', card:true },
+    { id:'p1', img:'', name:'Salmon Nigiri',   barcode:'11100001', price:5.99, type:'Nigiri', ingredients:'Rice, Salmon', instructions:'Brush with nikiri.', card:true },
+    { id:'p2', img:'', name:'California Roll', barcode:'11100002', price:7.49, type:'Roll',   ingredients:'Rice, Nori, Crab, Avocado', instructions:'8 pcs.', card:true },
   ];
-  const posts = [
-    { id:'post1', title:'Welcome to Sushi POS', body:'Create products, track stock, sell faster.', img:'', createdAt: now }
-  ];
+  const posts = [{ id:'post1', title:'Welcome to Sushi POS', body:'Create products, track stock, sell faster.', img:'', createdAt: now }];
   const tasks = [
-    { id:'t1', title:'Prep Salmon', status:'todo' },
-    { id:'t2', title:'Cook Rice', status:'inprogress' },
-    { id:'t3', title:'Sanitize Station', status:'done' },
+    { id:'t1', title:'Prep Salmon',      status:'todo'       },
+    { id:'t2', title:'Cook Rice',        status:'inprogress' },
+    { id:'t3', title:'Sanitize Station', status:'done'       },
   ];
   const cogs = [
-    { id:'c1', date:'2025-08-01', grossIncome: 1200, produceCost: 280, itemCost: 180, freight: 45, delivery: 30, other: 20 },
-    { id:'c2', date:'2025-08-02', grossIncome:  900, produceCost: 220, itemCost: 140, freight: 30, delivery: 25, other: 10 }
+    { id:'c1', date:'2025-08-01', grossIncome:1200, produceCost:280, itemCost:180, freight:45, delivery:30, other:20 },
+    { id:'c2', date:'2025-08-02', grossIncome: 900, produceCost:220, itemCost:140, freight:30, delivery:25, other:10 }
   ];
   save('users', users); save('inventory', inventory); save('products', products);
   save('posts', posts); save('tasks', tasks); save('cogs', cogs);
@@ -79,6 +90,65 @@ function applyTheme(){
 }
 applyTheme();
 
+// --- Cloud Sync (optional) ----------------------------------------------------
+const CLOUD_KEYS = ['inventory','products','posts','tasks','cogs','users','_theme2'];
+cloud = (function(){
+  let unsubscribers = [];
+  function uid(){ return auth.currentUser?.uid; }
+  function on(){ return !!load('_cloudOn', false); }
+  function setOn(v){ save('_cloudOn', !!v); }
+  function pathFor(key){ return db.collection('tenants').doc(uid()).collection('kv').doc(key); }
+  async function saveKV(key, val){
+    if (!on() || !uid()) return;
+    await pathFor(key).set({ key, val, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+  }
+  async function pullAllOnce(){
+    if (!uid()) return;
+    const kv = await db.collection('tenants').doc(uid()).collection('kv').get();
+    kv.forEach(doc=>{
+      const { key, val } = doc.data() || {};
+      if (key && val !== undefined){
+        localStorage.setItem(key, JSON.stringify(val));
+      }
+    });
+  }
+  function subscribeAll(){
+    if (!uid()) return;
+    unsubscribeAll();
+    CLOUD_KEYS.forEach(key=>{
+      const unsub = pathFor(key).onSnapshot(snap=>{
+        const data = snap.data(); if (!data) return;
+        const curr = load(key, null);
+        const serialized = JSON.stringify(curr);
+        const incoming   = JSON.stringify(data.val);
+        if (serialized !== incoming){
+          localStorage.setItem(key, incoming);
+          if (key === '_theme2') applyTheme();
+          renderApp();
+        }
+      });
+      unsubscribers.push(unsub);
+    });
+  }
+  function unsubscribeAll(){ unsubscribers.forEach(u=>{ try{u();}catch{} }); unsubscribers = []; }
+  async function pushAll(){
+    if (!uid()) return;
+    for (const k of CLOUD_KEYS){
+      const v = load(k, null);
+      if (v !== null && v !== undefined) await saveKV(k, v);
+    }
+  }
+  async function enable(){
+    if (!uid()) throw new Error('Sign in first.');
+    setOn(true);
+    await pushAll();
+    subscribeAll();
+  }
+  function disable(){ setOn(false); unsubscribeAll(); }
+  return { isOn:on, enable, disable, saveKV, pullAllOnce, subscribeAll, pushAll };
+})();
+
+// Part 2 — Router, idle-logout, auth, login, sidebar/search, topbar
 // --- Router -------------------------------------------------------------------
 function go(route){ currentRoute = route; save('_route', route); renderApp(); }
 
@@ -101,7 +171,7 @@ auth.onAuthStateChanged(async (user) => {
   applyTheme();
   if (user) {
     const email = (user.email || '').toLowerCase();
-    const users = load('users', []);
+    let users = load('users', []);
     let prof = users.find(u => (u.email||'').toLowerCase() === email);
     if (!prof) {
       const role = SUPER_ADMINS.includes(email) ? 'admin' : 'user';
@@ -111,7 +181,13 @@ auth.onAuthStateChanged(async (user) => {
       prof.role = 'admin'; save('users', users);
     }
     session = { ...prof }; save('session', session);
+
+    if (cloud.isOn()){
+      try { await cloud.pullAllOnce(); cloud.subscribeAll(); } catch (_) {}
+    }
+
     resetIdleTimer();
+    currentRoute = load('_route','home');
     renderApp();
   } else {
     session = null; save('session', null);
@@ -129,7 +205,7 @@ function renderLogin() {
         <div class="card-body">
           <div class="login-logo">
             <div class="logo">🍣</div>
-            <div class="login-badge">Manager / Admin</div>
+            <div class="login-badge hide-on-phone">Manager / Admin</div>
           </div>
           <h2 style="text-align:center;margin:6px 0 2px">Sushi POS</h2>
           <p class="login-note">Sign in with your email and password.</p>
@@ -144,31 +220,31 @@ function renderLogin() {
   `;
   $('#btnLogin').onclick = async () => {
     const email = $('#li-email').value.trim();
-    const pass = $('#li-pass').value;
+    const pass  = $('#li-pass').value;
     if (!email || !pass) { notify('Enter email & password','warn'); return; }
-    try {
-      await auth.signInWithEmailAndPassword(email, pass);
-      notify('Welcome!');
-    } catch (e) { notify(e.message || 'Login failed','danger'); }
+    try { await auth.signInWithEmailAndPassword(email, pass); notify('Welcome!'); }
+    catch (e) { notify(e.message || 'Login failed','danger'); }
   };
 }
-async function doLogout(){ await auth.signOut(); notify('Signed out'); }
+async function doLogout(){ cloud.disable(); await auth.signOut(); notify('Signed out'); }
 
 // --- Sidebar + Search ---------------------------------------------------------
-function renderSidebar(active='dashboard'){
+function renderSidebar(active='home'){
   const links = [
-    { route:'dashboard', icon:'ri-dashboard-line', label:'Dashboard' },
-    { route:'inventory', icon:'ri-archive-2-line', label:'Inventory' },
-    { route:'products',  icon:'ri-store-2-line',   label:'Products' },
+    { route:'home',      icon:'ri-home-5-line',              label:'Home' },
+    { route:'dashboard', icon:'ri-dashboard-line',           label:'Dashboard' },
+    { route:'inventory', icon:'ri-archive-2-line',           label:'Inventory' },
+    { route:'products',  icon:'ri-store-2-line',             label:'Products' },
     { route:'cogs',      icon:'ri-money-dollar-circle-line', label:'COGS' },
-    { route:'tasks',     icon:'ri-list-check-2',   label:'Tasks' },
-    { route:'settings',  icon:'ri-settings-3-line',label:'Settings' }
+    { route:'tasks',     icon:'ri-list-check-2',             label:'Tasks' },
+    { route:'settings',  icon:'ri-settings-3-line',          label:'Settings' }
   ];
   const pages = [
-    { route:'policy',  icon:'ri-shield-check-line', label:'Policy' },
-    { route:'license', icon:'ri-copyright-line',    label:'License' },
-    { route:'setup',   icon:'ri-guide-line',        label:'Setup Guide' },
-    { route:'contact', icon:'ri-customer-service-2-line', label:'Contact' },
+    { route:'policy',  icon:'ri-shield-check-line',        label:'Policy' },
+    { route:'license', icon:'ri-copyright-line',           label:'License' },
+    { route:'setup',   icon:'ri-guide-line',               label:'Setup Guide' },
+    { route:'contact', icon:'ri-customer-service-2-line',  label:'Contact' },
+    { route:'guide',   icon:'ri-video-line',               label:'User Guide' },
   ];
   return `
     <aside class="sidebar" id="sidebar">
@@ -200,11 +276,11 @@ function renderSidebar(active='dashboard'){
 
       <h6>Social</h6>
       <div class="socials-row">
-        <a href="https://youtube.com" target="_blank" rel="noopener" title="YouTube"><i class="ri-youtube-fill"></i></a>
-        <a href="https://facebook.com" target="_blank" rel="noopener" title="Facebook"><i class="ri-facebook-fill"></i></a>
+        <a href="https://youtube.com"   target="_blank" rel="noopener" title="YouTube"><i class="ri-youtube-fill"></i></a>
+        <a href="https://facebook.com"  target="_blank" rel="noopener" title="Facebook"><i class="ri-facebook-fill"></i></a>
         <a href="https://instagram.com" target="_blank" rel="noopener" title="Instagram"><i class="ri-instagram-line"></i></a>
-        <a href="https://tiktok.com" target="_blank" rel="noopener" title="TikTok"><i class="ri-tiktok-fill"></i></a>
-        <a href="https://twitter.com" target="_blank" rel="noopener" title="X/Twitter"><i class="ri-twitter-x-line"></i></a>
+        <a href="https://tiktok.com"    target="_blank" rel="noopener" title="TikTok"><i class="ri-tiktok-fill"></i></a>
+        <a href="https://twitter.com"   target="_blank" rel="noopener" title="X/Twitter"><i class="ri-twitter-x-line"></i></a>
       </div>
     </aside>
   `;
@@ -213,9 +289,10 @@ function renderSidebar(active='dashboard'){
 function hookSidebarInteractions(){
   $$('.sidebar .item').forEach(a => {
     a.onclick = ()=> { const r = a.getAttribute('data-route'); if (r) { go(r); closeSidebar(); } };
+    a.style.cursor = 'pointer';
   });
 
-  const input = $('#globalSearch');
+  const input   = $('#globalSearch');
   const results = $('#searchResults');
   const indexData = buildSearchIndex();
   let searchTimer;
@@ -259,12 +336,13 @@ function hookSidebarInteractions(){
           closeSidebar();
           if (id) setTimeout(()=> scrollToRow(id), 80);
         };
+        row.style.cursor = 'pointer';
       });
     }, 120);
   });
 
   document.addEventListener('click', (e) => {
-    if (!results.contains(e.target) && e.target !== input) {
+    if (results && !results.contains(e.target) && e.target !== input) {
       results.classList.remove('active');
     }
   });
@@ -289,8 +367,48 @@ function renderTopbar(){
 function openSidebar(){ $('#sidebar')?.classList.add('open'); $('#backdrop')?.classList.add('active'); }
 function closeSidebar(){ $('#sidebar')?.classList.remove('open'); $('#backdrop')?.classList.remove('active'); }
 
+// Part 3 — Views (Home with video, Search, Dashboard, Inventory, Products, COGS)
 // --- Views --------------------------------------------------------------------
 const USD = x => `$${Number(x||0).toFixed(2)}`;
+
+// Home (after login) — quick links + intro video
+function viewHome(){
+  const quick = [
+    {label:'Inventory', route:'inventory', icon:'ri-archive-2-line'},
+    {label:'Products',  route:'products',  icon:'ri-store-2-line'},
+    {label:'COGS',      route:'cogs',      icon:'ri-money-dollar-circle-line'},
+    {label:'Tasks',     route:'tasks',     icon:'ri-list-check-2'}
+  ];
+  return `
+    <div class="card">
+      <div class="card-body">
+        <h3 style="margin-top:0">Welcome 👋</h3>
+        <p style="color:var(--muted)">Pick a section to get started.</p>
+        <div class="grid cols-4 auto">
+          ${quick.map(q=>`<div class="card tile" data-go="${q.route}">
+              <div class="card-body" style="display:flex;gap:10px;align-items:center">
+                <i class="${q.icon}"></i><div><div>${q.label}</div></div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-body">
+        <h3 style="margin:0 0 8px 0">Quick Start Video</h3>
+        <div style="position:relative;padding-top:56.25%;border-radius:12px;overflow:hidden;border:1px solid var(--card-border)">
+          <iframe
+            src="https://www.youtube.com/embed/dQw4w9WgXcQ"
+            title="Sushi POS Guide"
+            allowfullscreen
+            style="position:absolute;inset:0;width:100%;height:100%;border:0">
+          </iframe>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 // Search page
 function viewSearch(){
@@ -322,10 +440,10 @@ function viewSearch(){
   `;
 }
 
-// Dashboard — tiles smaller (CSS handles); posts full width already
+// Dashboard — tiles + posts
 function viewDashboard(){
   const posts = load('posts', []);
-  const inv = load('inventory', []);
+  const inv   = load('inventory', []);
   const prods = load('products', []);
   const users = load('users', []);
 
@@ -534,7 +652,8 @@ function viewCOGS(){
   `;
 }
 
-// Tasks lanes
+// Part 4 — Tasks (empty-lane DnD), Settings, Static pages (with video), Modals
+// Tasks lanes (each lane always has an empty dropzone so dropping is possible even if lane is empty)
 function viewTasks(){
   const items = load('tasks', []);
   const lane = (key, label)=>`
@@ -544,7 +663,9 @@ function viewTasks(){
           <h3 style="margin:0">${label}</h3>
           ${key==='todo' && canCreate()? `<button class="btn" id="addTask"><i class="ri-add-line"></i> Add Task</button>`:''}
         </div>
-        <div class="grid" id="lane-${key}">
+        <div class="grid lane-grid" id="lane-${key}">
+          <!-- Always-present dropzone to allow drop into empty lanes -->
+          <div class="lane-dropzone" data-drop="${key}" style="height:20px;"></div>
           ${items.filter(t=>t.status===key).map(t=>`
             <div class="card task-card" id="${t.id}" draggable="true" data-task="${t.id}">
               <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
@@ -571,12 +692,34 @@ function viewTasks(){
   `;
 }
 
-// Settings (Theme full width above Users full width)
+// Settings (Theme full width above Users full width, plus Cloud toggle)
 function viewSettings(){
   const users = load('users', []);
   const theme = getTheme();
+  const cloudOn = cloud.isOn();
+
   return `
     <div class="grid">
+      <div class="card">
+        <div class="card-body">
+          <h3 style="margin-top:0">Cloud Sync</h3>
+          <p style="color:var(--muted)">Keep your data in Firebase to use it on any device. Local-first; works offline.</p>
+          <div class="theme-inline">
+            <div>
+              <label style="font-size:12px;color:var(--muted)">Status</label>
+              <select id="cloud-toggle" class="input">
+                <option value="off" ${!cloudOn?'selected':''}>Off</option>
+                <option value="on"  ${cloudOn?'selected':''}>On</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--muted)">Actions</label><br/>
+              <button class="btn" id="cloud-sync-now"><i class="ri-cloud-line"></i> Sync Now</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-body">
           <h3 style="margin-top:0">Theme</h3>
@@ -628,11 +771,11 @@ function viewSettings(){
   `;
 }
 
-// Static pages + Contact form
+// Static pages + Contact form + Guide video
 const pageContent = {
   policy: `<h3>Policy</h3><p>Our basic privacy and data usage policy for Sushi POS.</p>`,
   license:`<h3>License</h3><p>Permissive license for your restaurant use.</p>`,
-  setup:  `<h3>Setup Guide</h3><ol><li>Create Firebase Auth users.</li><li>Sign in as admin/manager.</li><li>Use Settings to set roles & theme.</li></ol>`,
+  setup:  `<h3>Setup Guide</h3><ol><li>Create Firebase Auth users.</li><li>Sign in as admin/manager.</li><li>Use Settings to set roles & theme.</li><li>Turn Cloud Sync on (optional).</li></ol>`,
   contact:`<h3>Contact</h3>
     <p>Got a question? Send us a message.</p>
     <div class="grid cols-2">
@@ -642,7 +785,24 @@ const pageContent = {
     <textarea id="ct-msg" class="input" rows="5" placeholder="Message"></textarea>
     <div style="display:flex;justify-content:flex-end;margin-top:10px">
       <button id="ct-send" class="btn"><i class="ri-send-plane-line"></i> Send</button>
-    </div>`
+    </div>`,
+  guide:`<h3>User Guide</h3>
+    <p>Short walkthrough of the app. More videos coming soon.</p>
+    <div style="position:relative;padding-top:56.25%;border-radius:12px;overflow:hidden;border:1px solid var(--card-border);margin:8px 0 16px">
+      <iframe
+        src="https://www.youtube.com/embed/dQw4w9WgXcQ"
+        title="Sushi POS Guide"
+        allowfullscreen
+        style="position:absolute;inset:0;width:100%;height:100%;border:0">
+      </iframe>
+    </div>
+    <ul>
+      <li>Inventory: add stock, thresholds, image hover/tap to preview.</li>
+      <li>Products: manage items; click image to open product card.</li>
+      <li>COGS: track daily costs; totals auto-calc.</li>
+      <li>Tasks: drag & drop across lanes with rules.</li>
+      <li>Settings: theme + cloud sync + users.</li>
+    </ul>`
 };
 function viewPage(key){ return `<div class="card"><div class="card-body">${pageContent[key]||'<p>Page</p>'}</div></div>`; }
 
@@ -795,7 +955,7 @@ function userModal(){
   </div>`;
 }
 
-// ----- NEW: Image preview modal (for phones) ---------------------------------
+// Image preview modal (for phones)
 function imgPreviewModal(){
   return `
   <div class="modal-backdrop" id="mb-img"></div>
@@ -814,6 +974,7 @@ function openImg(src){
   openModal('m-img');
 }
 
+// Part 5 — Render, wiring, DnD logic (works on empty lanes), theme/cloud hooks
 // --- Render App ---------------------------------------------------------------
 function renderApp(){
   if (!session) { renderLogin(); return; }
@@ -824,14 +985,17 @@ function renderApp(){
       <div>
         ${renderTopbar()}
         <div class="main" id="main">
-          ${ currentRoute==='dashboard' ? viewDashboard()
-            : currentRoute==='inventory' ? viewInventory()
-            : currentRoute==='products'  ? viewProducts()
-            : currentRoute==='cogs'      ? viewCOGS()
-            : currentRoute==='tasks'     ? viewTasks()
-            : currentRoute==='settings'  ? viewSettings()
-            : currentRoute==='search'    ? viewSearch()
-            : viewPage(currentRoute) }
+          ${
+            currentRoute==='home'      ? viewHome()
+          : currentRoute==='dashboard' ? viewDashboard()
+          : currentRoute==='inventory' ? viewInventory()
+          : currentRoute==='products'  ? viewProducts()
+          : currentRoute==='cogs'      ? viewCOGS()
+          : currentRoute==='tasks'     ? viewTasks()
+          : currentRoute==='settings'  ? viewSettings()
+          : currentRoute==='search'    ? viewSearch()
+          : viewPage(currentRoute)
+          }
         </div>
       </div>
     </div>
@@ -842,11 +1006,11 @@ function renderApp(){
   // Burger / backdrop / home / logout
   $('#burger')?.addEventListener('click', openSidebar, { passive:true });
   $('#backdrop')?.addEventListener('click', closeSidebar, { passive:true });
-  $('#btnHome')?.addEventListener('click', ()=> go('dashboard'));
+  $('#btnHome')?.addEventListener('click', ()=> go('home'));
   $('#btnLogout')?.addEventListener('click', doLogout);
 
-  // Dashboard tiles click-through
-  $$('.tile').forEach(t=>{ t.onclick = ()=> { const r=t.getAttribute('data-go'); if (r) go(r); }; });
+  // Tile click-through
+  $$('.tile').forEach(t=>{ t.onclick = ()=> { const r=t.getAttribute('data-go'); if (r) go(r); }; t.style.cursor='pointer'; });
 
   // Search "Open" buttons in main pane
   $$('#main [data-go]').forEach(btn=>{
@@ -858,22 +1022,23 @@ function renderApp(){
   });
 
   // Wire sections
-  wirePosts();
-  wireInventory();
-  wireProducts();
-  wireCOGS();
-  wireTasks();
-  wireUsers();
-  wireTheme();
-  wireProductCardClicks();
-  setupDnD();
+  wirePosts?.();
+  wireInventory?.();
+  wireProducts?.();
+  wireCOGS?.();
+  wireTasks?.();
+  wireUsers?.();
+  wireTheme?.();
+  wireProductCardClicks?.();
+  setupDnD?.();
+  enableMobileImagePreview?.();
 
-  // Contact form
+  // Contact form store-local
   if (currentRoute==='contact') {
     $('#ct-send')?.addEventListener('click', ()=>{
       const name = $('#ct-name').value.trim();
-      const email = $('#ct-email').value.trim();
-      const msg = $('#ct-msg').value.trim();
+      const email= $('#ct-email').value.trim();
+      const msg  = $('#ct-msg').value.trim();
       if (!name || !email || !msg) return notify('Please fill all fields','warn');
       const list = load('contact_msgs', []);
       list.push({ id: 'm_'+Date.now(), name, email, msg, at: Date.now() });
@@ -886,8 +1051,19 @@ function renderApp(){
   // Close modal buttons
   $$('[data-close]').forEach(b=> b.onclick = ()=> closeModal(b.getAttribute('data-close')));
 
-  // NEW: enable tap-to-enlarge on small screens for inventory/products images
-  enableMobileImagePreview();
+  // Cloud controls
+  if (currentRoute==='settings'){
+    $('#cloud-toggle')?.addEventListener('change', async (e)=>{
+      const val = e.target.value;
+      try {
+        if (val === 'on'){ await cloud.enable(); notify('Cloud Sync ON'); }
+        else { cloud.disable(); notify('Cloud Sync OFF'); }
+      } catch(err){ notify(err.message || 'Could not enable sync','danger'); e.target.value = 'off'; }
+    });
+    $('#cloud-sync-now')?.addEventListener('click', async ()=>{
+      try { await cloud.pushAll(); notify('Synced'); } catch { notify('Sync failed','danger'); }
+    });
+  }
 }
 
 function openModal(id){ $('#'+id)?.classList.add('active'); $('#mb-'+id.split('-')[1])?.classList.add('active'); }
@@ -1041,7 +1217,7 @@ function wireProducts(){
   });
 }
 
-// Add click-to-enlarge for product card click remains the same
+// Product card
 function wireProductCardClicks(){
   $$('.prod-thumb').forEach(el=>{
     el.style.cursor = 'pointer';
@@ -1052,19 +1228,19 @@ function wireProductCardClicks(){
       $('#pc-name').textContent = it.name;
       $('#pc-img').src = it.img || 'icons/icon-512.png';
       $('#pc-barcode').textContent = it.barcode||'-';
-      $('#pc-price').textContent = USD(it.price);
-      $('#pc-type').textContent = it.type||'-';
-      $('#pc-ingredients').textContent = it.ingredients||'-';
+      $('#pc-price').textContent   = USD(it.price);
+      $('#pc-type').textContent    = it.type||'-';
+      $('#pc-ingredients').textContent  = it.ingredients||'-';
       $('#pc-instructions').textContent = it.instructions||'-';
       openModal('m-card');
     };
   });
 }
 
-// NEW: Tap-to-enlarge for phones (inventory + products)
+// Phone image preview
 function enableMobileImagePreview(){
   const isPhone = window.matchMedia('(max-width: 740px)').matches;
-  if (!isPhone) return; // hover is fine on tablets/desktop
+  if (!isPhone) return;
   $$('.inv-preview, .prod-preview').forEach(el=>{
     el.style.cursor = 'pointer';
     el.addEventListener('click', ()=>{
@@ -1114,46 +1290,58 @@ function wireCOGS(){
   });
 }
 
-// Tasks DnD (bi-directional) + highlight
-// --- Tasks DnD with movement rules -------------------------------------------
+// --- Tasks DnD with movement rules + empty-lane drop support ------------------
 function setupDnD(){
   const lanes = ['todo','inprogress','done'];
-
-  // Allowed moves by FROM lane
   const allow = {
-    'todo':       new Set(['inprogress','done']),    // anywhere (except staying)
-    'inprogress': new Set(['todo','done']),          // forward or back to todo
-    'done':       new Set(['todo','inprogress'])     // back to todo or progress
+    'todo':       new Set(['inprogress','done']),
+    'inprogress': new Set(['todo','done']),
+    'done':       new Set(['todo','inprogress'])
   };
 
+  // Attach handlers to both the lane container and the always-present dropzone
   lanes.forEach(k=>{
-    const lane = $('#lane-'+k); if (!lane) return;
-    const parentCard = lane.closest('.lane-row');
+    const laneGrid = $('#lane-'+k); if (!laneGrid) return;
+    const parentCard = laneGrid.closest('.lane-row');
 
-    lane.ondragover = (e)=>{
+    const onDragOver = (e)=>{
       e.preventDefault();
-      const id = e.dataTransfer?.getData('text/plain');
-      if (!id) return;
+      const id = e.dataTransfer?.getData('text/plain'); if (!id) return;
       const items = load('tasks', []);
       const t = items.find(x=>x.id===id); if (!t) return;
       if (allow[t.status].has(k)) parentCard?.classList.add('drop');
       else parentCard?.classList.remove('drop');
     };
-    lane.ondragenter = (e)=>{ e.preventDefault(); };
-    lane.ondragleave = ()=> { parentCard?.classList.remove('drop'); };
-    lane.ondrop = (e)=>{
+    const onDrop = (e)=>{
       e.preventDefault();
       parentCard?.classList.remove('drop');
-      const id = e.dataTransfer.getData('text/plain');
+      const id = e.dataTransfer.getData('text/plain'); if (!id) return;
       const items = load('tasks', []);
       const t = items.find(x=>x.id===id); if (!t) return;
       if (!allow[t.status].has(k)) { notify('Move not allowed','warn'); return; }
       t.status = k; save('tasks', items); renderApp();
     };
+
+    // lane container
+    laneGrid.ondragover  = onDragOver;
+    laneGrid.ondragenter = (e)=>{ e.preventDefault(); };
+    laneGrid.ondragleave = ()=> { parentCard?.classList.remove('drop'); };
+    laneGrid.ondrop      = onDrop;
+
+    // explicit dropzone child (ensures dropping works when lane has zero tasks)
+    const dz = laneGrid.querySelector('[data-drop="'+k+'"]');
+    if (dz){
+      dz.ondragover  = onDragOver;
+      dz.ondrop      = onDrop;
+      dz.ondragenter = (e)=>{ e.preventDefault(); };
+      dz.ondragleave = ()=> { parentCard?.classList.remove('drop'); };
+    }
   });
 
+  // make all task cards draggable
   $$('[data-task]').forEach(card=>{
     card.ondragstart = (e)=> { e.dataTransfer.setData('text/plain', card.getAttribute('data-task')); };
+    card.style.cursor = 'grab';
   });
 }
 
@@ -1165,6 +1353,7 @@ function wireTasks(){
     const items = load('tasks', []);
     const id = $('#task-id').value || ('t_'+Date.now());
     const obj = { id, title: $('#task-title').value.trim(), status: $('#task-status').value };
+    if (!obj.title) return notify('Title required','warn');
     const i = items.findIndex(x=>x.id===id);
     if (i>=0) items[i]=obj; else items.push(obj);
     save('tasks',items); closeModal('m-task'); notify('Saved'); renderApp();
@@ -1234,6 +1423,7 @@ function wireTheme(){
   size.onchange = apply;
 }
 
+// Part 6 — Boot, search helpers
 // Initial render
 if (session) renderApp();
 
@@ -1249,10 +1439,11 @@ function buildSearchIndex(){
   const users = load('users', []);
 
   const pages = [
-    { id:'policy',  label:'Policy',  section:'Pages', route:'policy' },
-    { id:'license', label:'License', section:'Pages', route:'license' },
-    { id:'setup',   label:'Setup Guide', section:'Pages', route:'setup' },
-    { id:'contact', label:'Contact', section:'Pages', route:'contact' },
+    { id:'policy',  label:'Policy',       section:'Pages', route:'policy' },
+    { id:'license', label:'License',      section:'Pages', route:'license' },
+    { id:'setup',   label:'Setup Guide',  section:'Pages', route:'setup' },
+    { id:'contact', label:'Contact',      section:'Pages', route:'contact' },
+    { id:'guide',   label:'User Guide',   section:'Pages', route:'guide' },
   ];
 
   const ix = [];
@@ -1267,7 +1458,6 @@ function buildSearchIndex(){
 
 function searchAll(index, q){
   const term = q.toLowerCase();
-  // simple ranking: label hit > text hit
   return index
     .map(item => {
       const labelHit = (item.label||'').toLowerCase().includes(term) ? 2 : 0;
