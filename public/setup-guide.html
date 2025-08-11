@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Inventory Tracker – Setup Guide</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#0c1116;--panel:#111821;--panel2:#0f1520;--text:#e8f1f1;--muted:#9ab0b0;
+      --accent:#0ea5a5;--border:#1f2a37;--radius:14px;--shadow:0 10px 30px rgba(0,0,0,.25)
+    }
+    html,body{background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Inter,Arial;margin:0}
+    .wrap{max-width:980px;margin:0 auto;padding:24px}
+    h1{margin:0 0 6px}
+    p,li{color:var(--muted)}
+    .card{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin:14px 0}
+    .kbd{background:#00000055;border:1px solid var(--border);padding:1px 6px;border-radius:6px;font-family:ui-monospace,Consolas,monospace}
+    details{border:1px solid var(--border);border-radius:12px;margin:10px 0;background:var(--panel2)}
+    summary{cursor:pointer;padding:12px 14px;font-weight:600;list-style:none}
+    summary::-webkit-details-marker{display:none}
+    details > div{padding:14px}
+    pre{background:#00000066;border:1px solid var(--border);padding:12px;border-radius:12px;overflow:auto}
+    code{font-family:ui-monospace,Consolas,monospace}
+    .ok{color:#10b981}.warn{color:#f59e0b}.bad{color:#ef4444}
+    .grid{display:grid;gap:10px}
+    @media(min-width:780px){.grid.cols-2{grid-template-columns:1fr 1fr}}
+    a{color:var(--accent);text-decoration:none}
+    .pill{display:inline-block;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:#00000044;margin-right:6px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Setup Guide</h1>
+    <p class="pill">Stack: Firebase Hosting + Auth + Realtime Database (RTDB)</p>
+    <p class="pill">Local-first app with optional Cloud Sync</p>
+
+    <div class="card">
+      <strong>Quick Overview</strong>
+      <ol>
+        <li>Create a Firebase project (+ enable Auth, RTDB, Hosting).</li>
+        <li>Get your <span class="kbd">firebaseConfig</span> and paste it into <span class="kbd">public/js/app.js</span>.</li>
+        <li>Set RTDB rules (per-user access).</li>
+        <li>Deploy with Firebase Hosting.</li>
+        <li>Sign in → Settings → turn <strong>Cloud Sync ON</strong>.</li>
+      </ol>
+    </div>
+
+    <details open>
+      <summary>0) Prerequisites</summary>
+      <div>
+        <ul>
+          <li>Google account + access to <a href="https://console.firebase.google.com/" target="_blank">Firebase Console</a></li>
+          <li><a href="https://nodejs.org" target="_blank">Node.js</a> installed</li>
+          <li>Firebase CLI:
+            <pre><code>npm install -g firebase-tools
+firebase login</code></pre>
+          </li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>1) Create Firebase project</summary>
+      <div>
+        <ol>
+          <li>In the console, click <strong>Add project</strong>, e.g. <strong>inventory-tracker</strong>.</li>
+          <li>Note: The generated default hosting domain will be <span class="kbd">inventory-tracker.web.app</span>.</li>
+        </ol>
+      </div>
+    </details>
+
+    <details>
+      <summary>2) Enable products (Auth, RTDB, Hosting)</summary>
+      <div class="grid cols-2">
+        <div>
+          <h3>Authentication</h3>
+          <ol>
+            <li>Go to <strong>Build → Authentication</strong> → <strong>Get started</strong>.</li>
+            <li>Enable <strong>Email/Password</strong>.</li>
+            <li>(Optional) Add a test user (email + password).</li>
+          </ol>
+        </div>
+        <div>
+          <h3>Realtime Database (RTDB)</h3>
+          <ol>
+            <li>Go to <strong>Build → Realtime Database</strong> → <strong>Create database</strong>.</li>
+            <li>Choose a region (keep it near your users).</li>
+            <li>Select <strong>Locked mode</strong> (we’ll paste rules next).</li>
+          </ol>
+        </div>
+      </div>
+      <div class="card">
+        <strong>RTDB Rules (paste in <em>Realtime Database → Rules</em>)</strong>
+        <pre><code>{
+  "rules": {
+    "tenants": {
+      "$uid": {
+        "kv": {
+          "$key": {
+            ".read":  "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read":  "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    }
+  }
+}</code></pre>
+      </div>
+      <div class="card">
+        <strong>Hosting</strong>
+        <ol>
+          <li>In your project folder: place your app files under <span class="kbd">public/</span>
+            <ul>
+              <li><span class="kbd">public/index.html</span></li>
+              <li><span class="kbd">public/css/styles.css</span></li>
+              <li><span class="kbd">public/js/app.js</span></li>
+            </ul>
+          </li>
+          <li>Initialize hosting:
+            <pre><code>firebase init hosting
+# ? Use an existing project → select YOUR_PROJECT_ID
+# ? public directory → public
+# ? Configure as a single-page app → No
+# ? Set up automatic builds and deploys with GitHub? → No (optional)</code></pre>
+          </li>
+        </ol>
+      </div>
+    </details>
+
+    <details>
+      <summary>3) Grab your firebaseConfig & databaseURL</summary>
+      <div>
+        <ol>
+          <li>Go to <strong>Project settings → General</strong> → <strong>Your apps</strong> (Web app).</li>
+          <li>Copy the config object (apiKey, authDomain, projectId, etc.).</li>
+          <li>Find your RTDB URL in <strong>Build → Realtime Database</strong> top bar. It looks like:
+            <pre><code>https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com/</code></pre>
+          </li>
+          <li>Paste both into <span class="kbd">public/js/app.js</span> in the <code>firebaseConfig</code> object.</li>
+        </ol>
+        <div class="card">
+          <strong>Example (RTDB)</strong>
+          <pre><code>const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+  projectId: "YOUR_PROJECT_ID"
+};
+// Compat SDKs (loaded via script tags in index.html)
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const rtdb = firebase.database(); // ← RTDB instance</code></pre>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>4) Make sure index.html includes the Firebase SDK (compat)</summary>
+      <div>
+        <p>Because the app uses the compat API (e.g., <code>firebase.auth()</code>, <code>firebase.database()</code>), include these tags in <span class="kbd">public/index.html</span>:</p>
+        <pre><code>&lt;script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"&gt;&lt;/script&gt;
+&lt;script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"&gt;&lt;/script&gt;
+&lt;script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"&gt;&lt;/script&gt;
+&lt;!-- Your app code last --&gt;
+&lt;script src="/js/app.js"&gt;&lt;/script&gt;</code></pre>
+      </div>
+    </details>
+
+    <details>
+      <summary>5) Deploy to Firebase Hosting</summary>
+      <div>
+        <pre><code>firebase deploy --only hosting</code></pre>
+        <p>After a few seconds you’ll get a URL like <span class="kbd">https://YOUR_PROJECT_ID.web.app</span>.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>6) First run: sign in & turn on Cloud Sync</summary>
+      <div>
+        <ol>
+          <li>Open your hosting URL.</li>
+          <li>Sign in with an email/password you created in Authentication.</li>
+          <li>Go to <strong>Settings</strong> → set <strong>Cloud Sync</strong> to <strong>ON</strong>.
+            <ul>
+              <li>This syncs local data to <span class="kbd">/tenants/{uid}/kv/*</span> in RTDB.</li>
+              <li>You can turn it <strong>OFF</strong> anytime; the app still works locally (offline-first).</li>
+            </ul>
+          </li>
+        </ol>
+      </div>
+    </details>
+
+    <details>
+      <summary>7) Paths & per-user data model (RTDB)</summary>
+      <div>
+        <ul>
+          <li>Per user KV store: <span class="kbd">/tenants/{uid}/kv/{key}</span>
+            <ul>
+              <li>Keys used by the app: <span class="kbd">inventory</span>, <span class="kbd">products</span>, <span class="kbd">posts</span>, <span class="kbd">tasks</span>, <span class="kbd">cogs</span>, <span class="kbd">users</span>, <span class="kbd">_theme2</span>.</li>
+            </ul>
+          </li>
+          <li>Optional profile: <span class="kbd">/users/{uid}</span> (role, preferences if you extend it).</li>
+          <li>RTDB rules above enforce: <span class="ok">each user only sees their own data</span>.</li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>8) Custom domain (optional)</summary>
+      <div>
+        <ol>
+          <li>Go to <strong>Hosting → Add custom domain</strong>.</li>
+          <li>Follow the DNS verification steps (TXT) and point your domain’s A/CNAME to Firebase.</li>
+          <li>Once verified + propagated, your app serves at your custom domain <span class="ok">(no downtime)</span>.</li>
+        </ol>
+        <p class="warn"><strong>Note:</strong> project IDs and the default <span class="kbd">*.web.app</span> name cannot be renamed. If you need <span class="kbd">inventory-tracker.web.app</span>, create a project with that ID and migrate.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>9) Updating the app later</summary>
+      <div>
+        <ol>
+          <li>Edit files in <span class="kbd">public/</span> (HTML/CSS/JS).</li>
+          <li>Deploy:
+            <pre><code>firebase deploy --only hosting</code></pre>
+          </li>
+          <li>RTDB rules or data don’t change when you deploy hosting—those are separate.</li>
+        </ol>
+      </div>
+    </details>
+
+    <details>
+      <summary>Troubleshooting</summary>
+      <div>
+        <ul>
+          <li><strong>permission_denied</strong> on RTDB: check you’re signed in and RTDB Rules match above.</li>
+          <li><strong>Auth domain not allowed</strong>: Project settings → <em>Authorized domains</em> should include your site.</li>
+          <li><strong>Cannot read properties of undefined (firebase)</strong>:
+            <ul>
+              <li>Ensure compat SDKs are included <em>before</em> <span class="kbd">/js/app.js</span>.</li>
+              <li>Check the exact script URLs (app-compat, auth-compat, database-compat).</li>
+            </ul>
+          </li>
+          <li><strong>Cloud Sync ON does nothing</strong>:
+            <ul>
+              <li>Check <span class="kbd">firebaseConfig.databaseURL</span> is present and correct.</li>
+              <li>Open Browser DevTools → Network → verify RTDB writes to <span class="kbd">/tenants/{uid}/kv/*</span>.</li>
+            </ul>
+          </li>
+          <li><strong>Database URL returns <code>null</code> in browser</strong>:
+            <ul>
+              <li>That’s normal if there’s no public root data. The app doesn’t read the root; it uses per-user paths.</li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+    </details>
+
+    <details>
+      <summary>Appendix: Minimal file layout & snippets</summary>
+      <div class="grid cols-2">
+        <div>
+          <h3>Folder layout</h3>
+          <pre><code>public/
+  index.html
+  css/
+    styles.css
+  js/
+    app.js</code></pre>
+        </div>
+        <div>
+          <h3>index.html (SDK includes)</h3>
+          <pre><code>&lt;!-- Firebase compat SDKs --&gt;
+&lt;script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"&gt;&lt;/script&gt;
+&lt;script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"&gt;&lt;/script&gt;
+&lt;script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"&gt;&lt;/script&gt;
+&lt;!-- Your app --&gt;
+&lt;script src="/js/app.js"&gt;&lt;/script&gt;</code></pre>
+        </div>
+      </div>
+      <div class="card">
+        <strong>app.js (config section)</strong>
+        <pre><code>// --- Firebase (Auth + RTDB) ---
+const firebaseConfig = {
+  apiKey: "AIzaSyBY52zMMQqsvssukui3TfQnMigWoOzeKGk",
+  authDomain: "you-6bddf.firebaseapp.com",
+  databaseURL: "https://you-6bddf-default-rtdb.firebaseio.com",
+  projectId: "you-6bddf"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const rtdb = firebase.database(); // used by Cloud Sync module in this app</code></pre>
+      </div>
+    </details>
+
+    <div class="card">
+      <strong>You’re done!</strong>
+      <p>Deploy, sign in, switch Cloud Sync to <strong>ON</strong>, and your data will follow you on any browser. 🎉</p>
+    </div>
+  </div>
+</body>
+</html>

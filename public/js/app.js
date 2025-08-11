@@ -934,7 +934,13 @@ function viewSettings(){
 const pageContent = {
   policy: `<h3>Policy</h3><p>Our basic privacy and data usage policy for Sushi POS.</p>`,
   license:`<h3>License</h3><p>Permissive license for your restaurant use.</p>`,
-  setup:  `<h3>Setup Guide</h3><ol><li>Create Firebase Auth users.</li><li>Sign in as admin/manager.</li><li>Use Settings to set roles & theme.</li><li>Turn Cloud Sync on (optional).</li></ol>`,
+  setup:  `<h3>Setup Guide</h3>
+    <div style="border:1px solid var(--card-border); border-radius:12px; overflow:hidden;">
+      <iframe src="setup-guide.html" style="width:100%; height: calc(100vh - 220px); border:none;"></iframe>
+    </div>
+    <p style="color:var(--muted); font-size:12px; margin-top:8px">
+      Tip: open in a new tab if you want a full-page view.
+    </p>`,
   contact:`<h3>Contact</h3>
     <p>Got a question? Send us a message.</p>
     <div class="grid cols-2">
