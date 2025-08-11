@@ -3,10 +3,14 @@
 {/* // --- Firebase (Auth + Realtime Database) ------------------------------------- */}
 const firebaseConfig = {
   apiKey: "AIzaSyBY52zMMQqsvssukui3TfQnMigWoOzeKGk",
-  authDomain: "sushi-pos.firebaseapp.com",
-  projectId: "sushi-pos",
-  databaseURL: "https://sushi-pos-default-rtdb.firebaseio.com/",
-  storageBucket: "sushi-pos.firebasestorage.app",
+  // authDomain: "sushi-pos.firebaseapp.com",
+  authDomain: "you-6bddf.firebaseapp.com",
+  // projectId: "sushi-pos",
+  projectId: "you-6bddf",
+  // databaseURL: "https://sushi-pos-default-rtdb.firebaseio.com/",
+  databaseURL: "https://you-6bddf-default-rtdb.firebaseio.com",
+  // storageBucket: "sushi-pos.firebasestorage.app",
+  storageBucket: "you-6bddf.appspot.com",
   messagingSenderId: "909622476838",
   appId: "1:909622476838:web:1a1fb221a6a79fcaf4a6e7",
   measurementId: "G-M8Q8EJ4T7Q"
