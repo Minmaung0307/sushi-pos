@@ -35,6 +35,7 @@ const auth = firebase.auth();
 const rtdb = firebase.database();
 
 // --- DOM helpers --------------------------------------------------------------
+// --- DOM helpers --------------------------------------------------------------
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 const notify = (msg, type='ok') => {
@@ -42,8 +43,21 @@ const notify = (msg, type='ok') => {
   n.textContent = msg; n.className = `notification show ${type}`;
   setTimeout(()=> n.className='notification', 2200);
 };
-function save(key, val){ localStorage.setItem(key, JSON.stringify(val)); if (cloud.isOn()) cloud.saveKV(key, val).catch(()=>{}); }
-function load(key, fallback){ try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
+
+// SAFE: don't touch cloud until it's defined later
+function save(key, val){
+  localStorage.setItem(key, JSON.stringify(val));
+  try {
+    if (typeof cloud !== 'undefined' && cloud?.isOn?.()) {
+      cloud.saveKV(key, val).catch(()=>{});
+    }
+  } catch (_) {}
+}
+
+function load(key, fallback){
+  try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
+  catch { return fallback; }
+}
 
 // CSV helpers
 function toCSV(rows){
