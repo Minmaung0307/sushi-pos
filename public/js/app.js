@@ -1,25 +1,7 @@
-{/* <div class="logo">🍣</div> */}
-// Full app.js (RTDB) — Part 1/6
-// <!-- app.js — Part 1/6: Firebase + helpers + seed + theme + cloud (RTDB) -->
-{/* // --- Firebase (Auth + Realtime Database) ------------------------------------- */}
-// const firebaseConfig = {
-//   apiKey: "AIzaSyBY52zMMQqsvssukui3TfQnMigWoOzeKGk",
-//   // authDomain: "sushi-pos.firebaseapp.com",
-//   authDomain: "you-6bddf.firebaseapp.com",
-//   // projectId: "sushi-pos",
-//   projectId: "you-6bddf",
-//   // databaseURL: "https://sushi-pos-default-rtdb.firebaseio.com/",
-//   databaseURL: "https://you-6bddf-default-rtdb.firebaseio.com",
-//   // storageBucket: "sushi-pos.firebasestorage.app",
-//   storageBucket: "you-6bddf.appspot.com",
-//   messagingSenderId: "909622476838",
-//   appId: "1:909622476838:web:1a1fb221a6a79fcaf4a6e7",
-//   measurementId: "G-M8Q8EJ4T7Q"
-// };
-// firebase.initializeApp(firebaseConfig);
+// /* <div class="logo">🍣</div> */
 
-// Part 1/6 — Firebase + Utils + Cloud Sync (RTDB)
-// --- Firebase (Auth + RTDB) --------------------------------------------------
+// Part 1 — Firebase (Auth + RTDB) + helpers + theme + cloud + auth flow
+// --- Firebase (Auth + Realtime Database) 
 const firebaseConfig = {
   apiKey: "AIzaSyBY52zMMQqsvssukui3TfQnMigWoOzeKGk",
   authDomain: "you-6bddf.firebaseapp.com",
@@ -30,92 +12,61 @@ const firebaseConfig = {
   appId: "1:909622476838:web:1a1fb221a6a79fcaf4a6e7",
   measurementId: "G-M8Q8EJ4T7Q"
 };
+
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
-const rtdb = firebase.database();
+const db   = firebase.database();
 
 // --- DOM helpers --------------------------------------------------------------
-// --- DOM helpers --------------------------------------------------------------
-const $ = (sel, root=document) => root.querySelector(sel);
+const $  = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 const notify = (msg, type='ok') => {
   const n = $('#notification'); if (!n) return;
   n.textContent = msg; n.className = `notification show ${type}`;
   setTimeout(()=> n.className='notification', 2200);
 };
-
-// SAFE: don't touch cloud until it's defined later
 function save(key, val){
   localStorage.setItem(key, JSON.stringify(val));
-  try {
-    if (typeof cloud !== 'undefined' && cloud?.isOn?.()) {
-      cloud.saveKV(key, val).catch(()=>{});
-    }
-  } catch (_) {}
+  if (cloud.isOn()) cloud.saveKV(key, val).catch(()=>{});
 }
-
 function load(key, fallback){
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
   catch { return fallback; }
 }
 
-// CSV helpers
-function toCSV(rows){
-  if (!rows || !rows.length) return '';
-  const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
-  const esc = v => {
-    const s = (v==null ? '' : String(v));
-    if (/[,"\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
-    return s;
-  };
-  const head = cols.join(',');
-  const body = rows.map(r => cols.map(c => esc(r[c])).join(',')).join('\n');
-  return head + '\n' + body;
-}
-function download(filename, text){
-  const blob = new Blob([text], {type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.style.display='none';
-  document.body.appendChild(a); a.click();
-  URL.revokeObjectURL(url); a.remove();
-}
-
 // --- Globals & Prefill --------------------------------------------------------
 const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com'];
 let session = load('session', null);
-let currentRoute = load('_route', 'home');    // show Home first after login
-let searchQuery = load('_searchQ', '');
+let currentRoute = load('_route', 'home');
+let searchQuery  = load('_searchQ', '');
 
-// Prefill local demo data once
+// One-time seed (local)
 (function seedOnFirstRun(){
   if (load('_seeded', false)) return;
   const now = Date.now();
   const users = [
-    { name:'Admin', username:'admin', email:'admin@sushi.com', contact:'', role:'admin', password:'', img:'' },
-    { name:'Manager', username:'manager', email:'minmaung0307@gmail.com', contact:'', role:'manager', password:'', img:'' },
-    { name:'Cashier One', username:'cashier1', email:'cashier@sushi.com', contact:'', role:'user', password:'', img:'' },
+    { name:'Admin',   username:'admin',   email:'admin@sushi.com',           contact:'', role:'admin',   password:'', img:'' },
+    { name:'Manager', username:'manager', email:'minmaung0307@gmail.com',    contact:'', role:'manager', password:'', img:'' },
+    { name:'Cashier', username:'cashier1',email:'cashier@sushi.com',         contact:'', role:'user',    password:'', img:'' },
   ];
   const inventory = [
-    { id:'inv1', img:'', name:'Nori Sheets', code:'NOR-100', type:'Dry',   price:3.00, stock:80, threshold:30 },
-    { id:'inv2', img:'', name:'Sushi Rice',  code:'RIC-200', type:'Dry',   price:1.50, stock:24, threshold:20 },
-    { id:'inv3', img:'', name:'Fresh Salmon',code:'SAL-300', type:'Raw',   price:7.80, stock:10, threshold:12 },
+    { id:'inv1', img:'', name:'Nori Sheets', code:'NOR-100', type:'Dry', price:3.00, stock:80, threshold:30 },
+    { id:'inv2', img:'', name:'Sushi Rice',  code:'RIC-200', type:'Dry', price:1.50, stock:24, threshold:20 },
+    { id:'inv3', img:'', name:'Fresh Salmon',code:'SAL-300', type:'Raw', price:7.80, stock:10, threshold:12 },
   ];
   const products = [
-    { id:'p1', img:'', name:'Salmon Nigiri', barcode:'11100001', price:5.99, type:'Nigiri', ingredients:'Rice, Salmon', instructions:'Brush with nikiri.', card:true },
-    { id:'p2', img:'', name:'California Roll', barcode:'11100002', price:7.49, type:'Roll', ingredients:'Rice, Nori, Crab, Avocado', instructions:'8 pcs.', card:true },
+    { id:'p1', img:'', name:'Salmon Nigiri',   barcode:'11100001', price:5.99, type:'Nigiri', ingredients:'Rice, Salmon', instructions:'Brush with nikiri.' },
+    { id:'p2', img:'', name:'California Roll', barcode:'11100002', price:7.49, type:'Roll',   ingredients:'Rice, Nori, Crab, Avocado', instructions:'8 pcs.' },
   ];
-  const posts = [
-    { id:'post1', title:'Welcome to Inventory', body:'Create products, track stock, sell faster.', img:'', createdAt: now }
-  ];
+  const posts = [{ id:'post1', title:'Welcome to Inventory', body:'Track stock, manage products, and work faster.', img:'', createdAt: now }];
   const tasks = [
-    { id:'t1', title:'Prep Salmon', status:'todo' },
-    { id:'t2', title:'Cook Rice', status:'inprogress' },
-    { id:'t3', title:'Sanitize Station', status:'done' },
+    { id:'t1', title:'Prep Salmon',        status:'todo' },
+    { id:'t2', title:'Cook Rice',          status:'inprogress' },
+    { id:'t3', title:'Sanitize Station',   status:'done' },
   ];
   const cogs = [
-    { id:'c1', date:'2025-08-01', grossIncome: 1200, produceCost: 280, itemCost: 180, freight: 45, delivery: 30, other: 20 },
-    { id:'c2', date:'2025-08-02', grossIncome:  900, produceCost: 220, itemCost: 140, freight: 30, delivery: 25, other: 10 }
+    { id:'c1', date:'2024-08-01', grossIncome: 1200, produceCost:280, itemCost:180, freight:45, delivery:30, other:20 },
+    { id:'c2', date:'2024-08-02', grossIncome:  900, produceCost:220, itemCost:140, freight:30, delivery:25, other:10 }
   ];
   save('users', users); save('inventory', inventory); save('products', products);
   save('posts', posts); save('tasks', tasks); save('cogs', cogs);
@@ -126,7 +77,7 @@ let searchQuery = load('_searchQ', '');
 const THEME_MODES = [
   { key:'light', name:'Light' },
   { key:'dark',  name:'Dark'  },
-  { key:'aqua',  name:'Aqua'  } // default (dark aqua)
+  { key:'aqua',  name:'Aqua'  }
 ];
 const THEME_SIZES = [
   { key:'small',  pct: 90, label:'Small' },
@@ -145,58 +96,51 @@ applyTheme();
 // --- Cloud Sync (RTDB) --------------------------------------------------------
 const CLOUD_KEYS = ['inventory','products','posts','tasks','cogs','users','_theme2'];
 const cloud = (function(){
-  let unsubscribers = [];
+  let liveRefs = [];
   function uid(){ return auth.currentUser?.uid; }
   function on(){ return !!load('_cloudOn', false); }
   function setOn(v){ save('_cloudOn', !!v); }
-
   function pathFor(key){
-    // RTDB path: /tenants/{uid}/kv/{key}
-    const id = uid(); if (!id) throw new Error('No user');
-    return rtdb.ref(`tenants/${id}/kv/${key}`);
+    // /tenants/{uid}/kv/{key}
+    return db.ref(`tenants/${uid()}/kv/${key}`);
   }
-
   async function saveKV(key, val){
     if (!on() || !uid()) return;
     await pathFor(key).set({ key, val, updatedAt: firebase.database.ServerValue.TIMESTAMP });
   }
-
   async function pullAllOnce(){
     if (!uid()) return;
-    const snap = await rtdb.ref(`tenants/${uid()}/kv`).once('value');
-    const data = snap.val() || {};
-    Object.values(data).forEach(entry=>{
-      if (entry && entry.key && ('val' in entry)) {
-        localStorage.setItem(entry.key, JSON.stringify(entry.val));
+    const snap = await db.ref(`tenants/${uid()}/kv`).get();
+    if (!snap.exists()) return;
+    const all = snap.val() || {};
+    Object.values(all).forEach(row=>{
+      if (row && row.key && 'val' in row){
+        localStorage.setItem(row.key, JSON.stringify(row.val));
       }
     });
   }
-
   function subscribeAll(){
     if (!uid()) return;
     unsubscribeAll();
     CLOUD_KEYS.forEach(key=>{
       const ref = pathFor(key);
-      const cb = ref.on('value', (snap)=>{
+      const handler = ref.on('value', (snap)=>{
         const data = snap.val();
-        if (!data || !('val' in data)) return;
-        const current = load(key, null);
-        const incoming = data.val;
-        if (JSON.stringify(current) !== JSON.stringify(incoming)){
-          localStorage.setItem(key, JSON.stringify(incoming));
-          if (key === '_theme2') applyTheme();
+        if (!data) return;
+        const curr = load(key, null);
+        if (JSON.stringify(curr) !== JSON.stringify(data.val)){
+          localStorage.setItem(key, JSON.stringify(data.val));
+          if (key==='_theme2') applyTheme();
           renderApp();
         }
       });
-      unsubscribers.push(()=> ref.off('value', cb));
+      liveRefs.push({ ref, handler });
     });
   }
-
   function unsubscribeAll(){
-    unsubscribers.forEach(fn=>{ try{ fn(); }catch{} });
-    unsubscribers = [];
+    liveRefs.forEach(({ref})=>{ try{ ref.off(); }catch{} });
+    liveRefs = [];
   }
-
   async function pushAll(){
     if (!uid()) return;
     for (const k of CLOUD_KEYS){
@@ -206,23 +150,23 @@ const cloud = (function(){
       }
     }
   }
-
   async function enable(){
     if (!uid()) throw new Error('Sign in first.');
     setOn(true);
+    await pullAllOnce();
     await pushAll();
     subscribeAll();
   }
-  function disable(){ setOn(false); unsubscribeAll(); }
-
+  function disable(){
+    setOn(false);
+    unsubscribeAll();
+  }
   return { isOn:on, enable, disable, saveKV, pullAllOnce, subscribeAll, pushAll };
 })();
 
-// Part 2/6 — Router, Idle, Auth, Login
-// --- Router -------------------------------------------------------------------
+// --- Router & Idle ------------------------------------------------------------
 function go(route){ currentRoute = route; save('_route', route); renderApp(); }
 
-// --- Idle auto-logout (10 min) -----------------------------------------------
 let idleTimer = null;
 const IDLE_LIMIT = 10 * 60 * 1000;
 function resetIdleTimer(){
@@ -257,7 +201,8 @@ auth.onAuthStateChanged(async (user) => {
     }
 
     resetIdleTimer();
-    currentRoute = load('_route','home'); renderApp();
+    currentRoute = load('_route','home');
+    renderApp();
   } else {
     session = null; save('session', null);
     if (idleTimer) clearTimeout(idleTimer);
@@ -265,6 +210,7 @@ auth.onAuthStateChanged(async (user) => {
   }
 });
 
+// Part 2 — Sidebar/topbar + global listeners + renderApp scaffold
 // --- Login / Logout -----------------------------------------------------------
 function renderLogin() {
   const root = $('#root');
@@ -289,34 +235,31 @@ function renderLogin() {
   `;
   $('#btnLogin').onclick = async () => {
     const email = $('#li-email').value.trim();
-    const pass = $('#li-pass').value;
+    const pass  = $('#li-pass').value;
     if (!email || !pass) { notify('Enter email & password','warn'); return; }
-    try {
-      await auth.signInWithEmailAndPassword(email, pass);
-      notify('Welcome!');
-    } catch (e) { notify(e.message || 'Login failed','danger'); }
+    try { await auth.signInWithEmailAndPassword(email, pass); notify('Welcome!'); }
+    catch (e) { notify(e.message || 'Login failed','danger'); }
   };
 }
 async function doLogout(){ cloud.disable(); await auth.signOut(); notify('Signed out'); }
 
-// Part 3/6 — Sidebar, Topbar, Views (incl. Dashboard & Export buttons)
-// --- Sidebar + Search ---------------------------------------------------------
+// --- Sidebar + Topbar ---------------------------------------------------------
 function renderSidebar(active='home'){
   const links = [
-    { route:'home',      icon:'ri-home-5-line', label:'Home' },
-    { route:'dashboard', icon:'ri-dashboard-line', label:'Dashboard' },
-    { route:'inventory', icon:'ri-archive-2-line', label:'Inventory' },
-    { route:'products',  icon:'ri-store-2-line',   label:'Products' },
+    { route:'home',      icon:'ri-home-5-line',              label:'Home' },
+    { route:'dashboard', icon:'ri-dashboard-line',           label:'Dashboard' },
+    { route:'inventory', icon:'ri-archive-2-line',           label:'Inventory' },
+    { route:'products',  icon:'ri-store-2-line',             label:'Products' },
     { route:'cogs',      icon:'ri-money-dollar-circle-line', label:'COGS' },
-    { route:'tasks',     icon:'ri-list-check-2',   label:'Tasks' },
-    { route:'settings',  icon:'ri-settings-3-line',label:'Settings' }
+    { route:'tasks',     icon:'ri-list-check-2',             label:'Tasks' },
+    { route:'settings',  icon:'ri-settings-3-line',          label:'Settings' }
   ];
   const pages = [
-    { route:'policy',  icon:'ri-shield-check-line', label:'Policy' },
-    { route:'license', icon:'ri-copyright-line',    label:'License' },
-    { route:'setup',   icon:'ri-guide-line',        label:'Setup Guide' },
+    { route:'policy',  icon:'ri-shield-check-line',    label:'Policy' },
+    { route:'license', icon:'ri-copyright-line',       label:'License' },
+    { route:'setup',   icon:'ri-guide-line',           label:'Setup Guide' },
     { route:'contact', icon:'ri-customer-service-2-line', label:'Contact' },
-    { route:'guide',   icon:'ri-video-line',        label:'User Guide' },
+    { route:'guide',   icon:'ri-video-line',           label:'User Guide' },
   ];
   return `
     <aside class="sidebar" id="sidebar">
@@ -357,17 +300,112 @@ function renderSidebar(active='home'){
     </aside>
   `;
 }
-function hookSidebarInteractions(){
-  $$('.sidebar .item').forEach(a => {
-    a.onclick = ()=> { const r = a.getAttribute('data-route'); if (r) { go(r); closeSidebar(); } };
-    a.style.cursor = 'pointer';
+function renderTopbar(){
+  return `
+    <div class="topbar">
+      <div class="left">
+        <div class="burger" id="burger"><i class="ri-menu-line"></i></div>
+        <div><strong>${currentRoute[0].toUpperCase()+currentRoute.slice(1)}</strong></div>
+      </div>
+      <div class="right">
+        <button class="btn ghost" id="btnHome"><i class="ri-home-5-line"></i> Home</button>
+        <button class="btn secondary" id="btnLogout"><i class="ri-logout-box-r-line"></i> Logout</button>
+      </div>
+    </div>
+    <div class="backdrop" id="backdrop"></div>
+  `;
+}
+
+// --- Global delegated listeners ----------------------------------------------
+// Sidebar route (works across re-renders)
+document.addEventListener('click', (e)=>{
+  const item = e.target.closest('.sidebar .item[data-route]');
+  if (!item) return;
+  const r = item.getAttribute('data-route');
+  if (r) go(r);
+}, { passive: true });
+
+// Close modals (works across re-renders)
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-close]');
+  if (!btn) return;
+  const id = btn.getAttribute('data-close');
+  if (id) { closeModal(id); }
+}, { passive: true });
+
+// --- Render App ---------------------------------------------------------------
+function renderApp(){
+  if (!session) { renderLogin(); return; }
+  const root = $('#root');
+  root.innerHTML = `
+    <div class="app">
+      ${renderSidebar(currentRoute)}
+      <div>
+        ${renderTopbar()}
+        <div class="main" id="main">
+          ${
+            currentRoute==='home'      ? viewHome()
+          : currentRoute==='dashboard' ? viewDashboard()
+          : currentRoute==='inventory' ? viewInventory()
+          : currentRoute==='products'  ? viewProducts()
+          : currentRoute==='cogs'      ? viewCOGS()
+          : currentRoute==='tasks'     ? viewTasks()
+          : currentRoute==='settings'  ? viewSettings()
+          : currentRoute==='search'    ? viewSearch()
+          : viewPage(currentRoute)
+          }
+        </div>
+      </div>
+    </div>
+  `;
+
+  hookSidebarInteractions();
+
+  // Burger / backdrop / home / logout
+  $('#burger')?.addEventListener('click', openSidebar, { passive:true });
+  $('#backdrop')?.addEventListener('click', closeSidebar, { passive:true });
+  $('#btnHome')?.addEventListener('click', ()=> go('home'));
+  $('#btnLogout')?.addEventListener('click', doLogout);
+
+  // Robust tile click-through
+  document.querySelectorAll('.card.tile[data-go]').forEach(t => {
+    t.style.cursor = 'pointer';
+    t.onclick = () => { const r = t.getAttribute('data-go'); if (r) go(r); };
   });
 
+  // Buttons inside main content that navigate
+  $$('#main [data-go]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const r = btn.getAttribute('data-go'); const id = btn.getAttribute('data-id');
+      go(r);
+      if (id) setTimeout(()=> scrollToRow(id), 80);
+    };
+  });
+
+  // Wire sections
+  if (currentRoute==='dashboard')  wireDashboard?.();
+  if (currentRoute==='inventory')  wireInventory?.();
+  if (currentRoute==='products')   wireProducts?.();
+  if (currentRoute==='cogs')       wireCOGS?.();
+  if (currentRoute==='tasks')      { wireTasks?.(); setupDnD?.(); }
+  if (currentRoute==='settings')   wireSettings?.();
+
+  // Mobile image preview support
+  enableMobileImagePreview?.();
+}
+
+function openSidebar(){ $('#sidebar')?.classList.add('open'); $('#backdrop')?.classList.add('active'); }
+function closeSidebar(){ $('#sidebar')?.classList.remove('open'); $('#backdrop')?.classList.remove('active'); }
+
+// Part 3 — Home (with video) + Search + Dashboard
+// --- Search box in sidebar ----------------------------------------------------
+function hookSidebarInteractions(){
   const input = $('#globalSearch');
   const results = $('#searchResults');
   const indexData = buildSearchIndex();
   let searchTimer;
 
+  if (!input) return;
   input.removeAttribute('disabled');
   input.style.pointerEvents = 'auto';
 
@@ -407,7 +445,6 @@ function hookSidebarInteractions(){
           closeSidebar();
           if (id) setTimeout(()=> scrollToRow(id), 80);
         };
-        row.style.cursor = 'pointer';
       });
     }, 120);
   });
@@ -419,29 +456,10 @@ function hookSidebarInteractions(){
   });
 }
 
-// --- Topbar / Burger ----------------------------------------------------------
-function renderTopbar(){
-  return `
-    <div class="topbar">
-      <div class="left">
-        <div class="burger" id="burger"><i class="ri-menu-line"></i></div>
-        <div><strong>${currentRoute[0].toUpperCase()+currentRoute.slice(1)}</strong></div>
-      </div>
-      <div class="right">
-        <button class="btn ghost" id="btnHome"><i class="ri-home-5-line"></i> Home</button>
-        <button class="btn secondary" id="btnLogout"><i class="ri-logout-box-r-line"></i> Logout</button>
-      </div>
-    </div>
-    <div class="backdrop" id="backdrop"></div>
-  `;
-}
-function openSidebar(){ $('#sidebar')?.classList.add('open'); $('#backdrop')?.classList.add('active'); }
-function closeSidebar(){ $('#sidebar')?.classList.remove('open'); $('#backdrop')?.classList.remove('active'); }
-
 // --- Views --------------------------------------------------------------------
 const USD = x => `$${Number(x||0).toFixed(2)}`;
+const VIDEO_ID = 'ysz5S6PUM-U'; // sample public video
 
-// Home (after login)
 function viewHome(){
   const quick = [
     {label:'Inventory', route:'inventory', icon:'ri-archive-2-line'},
@@ -467,13 +485,13 @@ function viewHome(){
     <div class="card" style="margin-top:16px">
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <h3 style="margin:0">Quick Start Video</h3>
-          <a class="btn ghost" href="https://www.youtube.com/watch?v=VIDEO_ID" target="_blank" rel="noopener">Open on YouTube</a>
+          <h3 style="margin:0">What is Inventory?</h3>
+          <a class="btn ghost" href="https://www.youtube.com/watch?v=${VIDEO_ID}" target="_blank" rel="noopener">Open on YouTube</a>
         </div>
         <div style="position:relative;padding-top:56.25%;border:1px solid var(--card-border);border-radius:12px;overflow:hidden">
           <iframe
-            src="https://www.youtube.com/embed/VIDEO_ID"
-            title="Inventory — quick start"
+            src="https://www.youtube.com/embed/${VIDEO_ID}"
+            title="What is Inventory?"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowfullscreen
             style="position:absolute;inset:0;width:100%;height:100%;border:0">
@@ -484,8 +502,7 @@ function viewHome(){
   `;
 }
 
-// Search page
-function viewSearch(){ 
+function viewSearch(){
   const q = searchQuery || '';
   const index = buildSearchIndex();
   const out = q ? searchAll(index, q) : [];
@@ -514,137 +531,60 @@ function viewSearch(){
   `;
 }
 
-// Dashboard (low/critical, tasks snapshot, COGS compare, posts)
 function viewDashboard(){
   const posts = load('posts', []);
   const inv = load('inventory', []);
   const prods = load('products', []);
   const users = load('users', []);
   const tasks = load('tasks', []);
+  const low   = inv.filter(i=>i.stock <= i.threshold && i.stock > Math.max(1, Math.floor(i.threshold*0.6))).length;
+  const crit  = inv.filter(i=>i.stock <= Math.max(1, Math.floor(i.threshold*0.6))).length;
 
-  // Low/Critical
-  let low = 0, critical = 0;
-  inv.forEach(i=>{
-    if (i.threshold > 0 && i.stock <= i.threshold){
-      if (i.stock <= Math.max(1, Math.floor(i.threshold * 0.6))) critical++;
-      else low++;
-    }
-  });
-
-  // Task counts
-  const tc = {
-    todo: tasks.filter(t=>t.status==='todo').length,
-    inprogress: tasks.filter(t=>t.status==='inprogress').length,
-    done: tasks.filter(t=>t.status==='done').length,
-  };
-
-  // COGS comparison
-  const rows = load('cogs', []);
-  const sumWeek = (startISO)=>{
-    const s = new Date(startISO); const e = new Date(s); e.setDate(s.getDate()+6);
-    return rows.filter(r=>{
-      const d = new Date(r.date);
-      return d >= s && d <= e;
-    }).reduce((a,r)=>a+(Number(r.grossIncome)||0),0);
-  };
-  const now = new Date(); const day = (now.getDay()+6)%7;
-  const currMon = new Date(now); currMon.setDate(now.getDate()-day);
-  const prevMon = new Date(currMon); prevMon.setDate(currMon.getDate()-7);
-  const currentWeekTotal = sumWeek(currMon.toISOString().slice(0,10));
-  const prevWeekTotal = sumWeek(prevMon.toISOString().slice(0,10));
-  const baselineTotal = sumWeek('2024-08-01');
-
-  const healthStrip = `
+  return `
     <div class="grid cols-4 auto">
       <div class="card tile" data-go="inventory"><div>Total Items</div><h2>${inv.length}</h2></div>
       <div class="card tile" data-go="products"><div>Products</div><h2>${prods.length}</h2></div>
       <div class="card tile" data-go="settings"><div>Users</div><h2>${users.length}</h2></div>
       <div class="card tile" data-go="tasks"><div>Tasks</div><h2>${tasks.length}</h2></div>
     </div>
-    <div class="grid" style="margin-top:12px">
+
+    <div class="grid cols-3" style="margin-top:16px">
       <div class="card">
-        <div class="card-body" style="display:flex; gap:16px; align-items:center; flex-wrap:wrap">
-          <div><strong>Inventory Health:</strong></div>
-          <div class="badge badge-warn">Low: ${low}</div>
-          <div class="badge badge-danger">Critical: ${critical}</div>
-          <div style="flex:1"></div>
-          <button class="btn ghost" data-go="inventory"><i class="ri-archive-2-line"></i> Review</button>
+        <div class="card-body">
+          <h3 style="margin:0 0 8px">Warnings</h3>
+          <div style="display:flex;gap:12px">
+            <div class="btn warn" style="pointer-events:none">Low: ${low}</div>
+            <div class="btn danger" style="pointer-events:none">Critical: ${crit}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <h3 style="margin:0 0 8px">Tasks</h3>
+          <div class="grid">
+            ${tasks.slice(0,6).map(t=>`<div class="card"><div class="card-body" style="display:flex;justify-content:space-between"><span>${t.title}</span><span style="color:var(--muted)">${t.status}</span></div></div>`).join('') || '<p style="color:var(--muted)">No tasks yet.</p>'}
+          </div>
+          <div style="margin-top:10px;text-align:right"><button class="btn ghost" data-go="tasks">Open Tasks</button></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <h3 style="margin:0 0 8px">Posts</h3>
+          <div class="grid">
+            ${posts.map(p=>`<div class="card"><div class="card-body"><strong>${p.title}</strong><div style="color:var(--muted);font-size:12px">${new Date(p.createdAt).toLocaleString()}</div></div></div>`).join('') || '<p style="color:var(--muted)">No posts.</p>'}
+          </div>
+          <div style="margin-top:10px;text-align:right"><button class="btn ghost" data-go="dashboard">Refresh</button></div>
         </div>
       </div>
     </div>
   `;
-
-  const tasksSnapshot = `
-    <div class="grid cols-3 auto" style="margin-top:12px">
-      <div class="card"><div class="card-body">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <div><strong>To do</strong></div><div class="chip chip-todo">${tc.todo}</div></div>
-        <div class="mini-list">
-          ${tasks.filter(t=>t.status==='todo').slice(0,5).map(t=>`<div class="mini-item">${t.title}</div>`).join('') || '<div class="mini-empty">No tasks</div>'}
-        </div>
-      </div></div>
-      <div class="card"><div class="card-body">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <div><strong>In progress</strong></div><div class="chip chip-prog">${tc.inprogress}</div></div>
-        <div class="mini-list">
-          ${tasks.filter(t=>t.status==='inprogress').slice(0,5).map(t=>`<div class="mini-item">${t.title}</div>`).join('') || '<div class="mini-empty">No tasks</div>'}
-        </div>
-      </div></div>
-      <div class="card"><div class="card-body">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <div><strong>Done</strong></div><div class="chip chip-done">${tc.done}</div></div>
-        <div class="mini-list">
-          ${tasks.filter(t=>t.status==='done').slice(0,5).map(t=>`<div class="mini-item">${t.title}</div>`).join('') || '<div class="mini-empty">No tasks</div>'}
-        </div>
-      </div></div>
-    </div>
-  `;
-
-  const cogsCompare = `
-    <div class="card" style="margin-top:12px">
-      <div class="card-body">
-        <div style="display:flex; gap:18px; align-items:center; flex-wrap:wrap">
-          <div><strong>Sales (Gross)</strong></div>
-          <div class="pill">Current week: <strong>${USD(currentWeekTotal)}</strong></div>
-          <div class="pill">Prev week: <strong>${USD(prevWeekTotal)}</strong></div>
-          ${baselineTotal>0 ? `<div class="pill">Baseline (2024-08-01 wk): <strong>${USD(baselineTotal)}</strong></div>`:''}
-          <div style="flex:1"></div>
-          <button class="btn ghost" data-go="cogs"><i class="ri-money-dollar-circle-line"></i> Open COGS</button>
-        </div>
-      </div>
-    </div>
-  `;
-
-  const postsBlock = `
-    <div class="card" style="margin-top:16px">
-      <div class="card-body">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <h3 style="margin:0">Posts</h3>
-          ${canCreate() ? `<button class="btn" id="addPost"><i class="ri-add-line"></i> New Post</button>` : ''}
-        </div>
-        <div class="grid" data-section="posts">
-          ${posts.map(p => `
-            <div class="card" id="${p.id}">
-              <div class="card-body">
-                <div style="display:flex;justify-content:space-between;align-items:center">
-                  <div><strong>${p.title}</strong><div style="color:var(--muted);font-size:12px">${new Date(p.createdAt).toLocaleString()}</div></div>
-                  <div>
-                    <button class="btn ghost" data-edit="${p.id}"><i class="ri-edit-line"></i></button>
-                    <button class="btn danger" data-del="${p.id}"><i class="ri-delete-bin-6-line"></i></button>
-                  </div>
-                </div>
-                ${p.img?`<img src="${p.img}" style="width:100%;border-radius:12px;margin-top:10px;border:1px solid var(--card-border)"/>`:''}
-                <p style="margin-top:8px">${p.body}</p>
-              </div>
-            </div>`).join('')}
-        </div>
-      </div>
-    </div>
-  `;
-  return healthStrip + tasksSnapshot + cogsCompare + postsBlock;
 }
+function wireDashboard(){ /* nothing special yet */ }
 
-// Inventory (with Export)
+// Part 4 — Inventory, Products, COGS, Tasks (with empty-lane drop) + Settings + Static pages
+// Inventory
 function viewInventory(){
   const items = load('inventory', []);
   return `
@@ -652,10 +592,7 @@ function viewInventory(){
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <h3 style="margin:0">Inventory</h3>
-          <div style="display:flex; gap:8px">
-            <button class="btn ghost" id="export-inv"><i class="ri-download-2-line"></i> Export CSV</button>
-            ${canCreate() ? `<button class="btn" id="addInv"><i class="ri-add-line"></i> Add Item</button>` : ''}
-          </div>
+          ${canCreate() ? `<button class="btn" id="addInv"><i class="ri-add-line"></i> Add Item</button>` : ''}
         </div>
         <div class="table-wrap" data-section="inventory">
           <table class="table">
@@ -668,7 +605,7 @@ function viewInventory(){
                 return `<tr id="${it.id}" class="${warnClass}">
                   <td>
                     <div class="thumb-wrap">
-                      ${it.img?`<img class="thumb inv-preview" data-src="${it.img}" alt=""/>`:`<div class="thumb inv-preview" data-src="icons/icon-512.png" style="display:grid;place-items:center">🍙</div>`}
+                      ${it.img?`<img class="thumb inv-preview" data-src="${it.img}" alt=""/>`:`<div class="thumb inv-preview" data-src="icons/icon-512.png" style="display:grid;place-items:center">📦</div>`}
                       <img class="thumb-large" src="${it.img||'icons/icon-512.png'}" alt=""/>
                     </div>
                   </td>
@@ -704,7 +641,7 @@ function viewInventory(){
   `;
 }
 
-// Products (with Export)
+// Products
 function viewProducts(){
   const items = load('products', []);
   return `
@@ -712,10 +649,7 @@ function viewProducts(){
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <h3 style="margin:0">Products</h3>
-          <div style="display:flex; gap:8px">
-            <button class="btn ghost" id="export-prod"><i class="ri-download-2-line"></i> Export CSV</button>
-            ${canCreate() ? `<button class="btn" id="addProd"><i class="ri-add-line"></i> Add Product</button>` : ''}
-          </div>
+          ${canCreate() ? `<button class="btn" id="addProd"><i class="ri-add-line"></i> Add Product</button>` : ''}
         </div>
         <div class="table-wrap" data-section="products">
           <table class="table">
@@ -727,7 +661,7 @@ function viewProducts(){
                 <tr id="${it.id}">
                   <td>
                     <div class="thumb-wrap">
-                      ${it.img?`<img class="thumb prod-thumb prod-preview" data-card="${it.id}" data-src="${it.img}" alt=""/>`:`<div class="thumb prod-thumb prod-preview" data-card="${it.id}" data-src="icons/icon-512.png" style="display:grid;place-items:center;cursor:pointer">🍤</div>`}
+                      ${it.img?`<img class="thumb prod-thumb prod-preview" data-card="${it.id}" data-src="${it.img}" alt=""/>`:`<div class="thumb prod-thumb prod-preview" data-card="${it.id}" data-src="icons/icon-512.png" style="display:grid;place-items:center;cursor:pointer">🍣</div>`}
                       <img class="thumb-large" src="${it.img||'icons/icon-512.png'}" alt=""/>
                     </div>
                   </td>
@@ -753,7 +687,7 @@ function viewProducts(){
   `;
 }
 
-// COGS (with Export)
+// COGS
 function viewCOGS(){
   const rows = load('cogs', []);
   const totals = rows.reduce((a,r)=>({
@@ -772,10 +706,7 @@ function viewCOGS(){
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <h3 style="margin:0">COGS</h3>
-          <div style="display:flex; gap:8px">
-            <button class="btn ghost" id="export-cogs"><i class="ri-download-2-line"></i> Export CSV</button>
-            ${canCreate() ? `<button class="btn" id="addCOGS"><i class="ri-add-line"></i> Add Row</button>` : ''}
-          </div>
+          ${canCreate() ? `<button class="btn" id="addCOGS"><i class="ri-add-line"></i> Add Row</button>` : ''}
         </div>
         <div class="table-wrap" data-section="cogs">
           <table class="table">
@@ -821,7 +752,7 @@ function viewCOGS(){
   `;
 }
 
-// Tasks lanes
+// Tasks (with empty-lane drop)
 function viewTasks(){
   const items = load('tasks', []);
   const lane = (key, label)=>`
@@ -829,9 +760,10 @@ function viewTasks(){
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <h3 style="margin:0">${label}</h3>
-          ${key==='todo' && canCreate()? `<button class="btn" id="addTask"><i class="ri-add-line"></i> Add Task</button>`:''}
+          ${key==='todo' ? `<button class="btn" id="addTask"><i class="ri-add-line"></i> Add Task</button>`:''}
         </div>
-        <div class="grid" id="lane-${key}">
+        <div class="lane-grid" id="lane-${key}">
+          <div class="lane-dropzone" data-zone="${key}"></div>
           ${items.filter(t=>t.status===key).map(t=>`
             <div class="card task-card" id="${t.id}" draggable="true" data-task="${t.id}">
               <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
@@ -869,7 +801,7 @@ function viewSettings(){
       <div class="card">
         <div class="card-body">
           <h3 style="margin-top:0">Cloud Sync</h3>
-          <p style="color:var(--muted)">Keep your data in Firebase to use it on any device. Local-first; works offline.</p>
+          <p style="color:var(--muted)">Store your data in Firebase RTDB to use it on any device. Local-first; works offline.</p>
           <div class="theme-inline">
             <div>
               <label style="font-size:12px;color:var(--muted)">Status</label>
@@ -937,8 +869,7 @@ function viewSettings(){
   `;
 }
 
-// Part 4/6 — Static pages + Modals
-// Static pages + Contact form (iframes supported)
+// Static pages + Contact form (iframes to standalone pages)
 const pageContent = {
   policy: `<h3>Policy</h3>
     <div style="border:1px solid var(--card-border);border-radius:12px;overflow:hidden">
@@ -976,6 +907,7 @@ function viewPage(key){ return `<div class="card"><div class="card-body">${pageC
 function canManage(){ return session && (session.role==='admin' || session.role==='manager'); }
 function canCreate(){ return session && (session.role==='admin' || session.role==='manager'); }
 
+// Part 5 — Modals + wiring (inventory/products/cogs/tasks/users) + Settings wiring + DnD + image preview
 // --- Modals -------------------------------------------------------------------
 function postModal(){
   if (!canCreate()) return '';
@@ -1098,6 +1030,28 @@ function taskModal(){
     </div>
   </div>`;
 }
+function userModal(){
+  if (!canManage()) return '';
+  return `
+  <div class="modal-backdrop" id="mb-user"></div>
+  <div class="modal" id="m-user">
+    <div class="dialog">
+      <div class="head"><strong>User</strong><button class="btn ghost" data-close="m-user">Close</button></div>
+      <div class="body grid">
+        <input id="user-name" class="input" placeholder="Name" />
+        <input id="user-email" class="input" type="email" placeholder="Email" />
+        <input id="user-username" class="input" placeholder="Username" />
+        <select id="user-role">
+          <option value="user">User</option>
+          <option value="manager">Manager</option>
+          <option value="admin">Admin</option>
+        </select>
+        <input id="user-img" class="input" placeholder="Image URL (optional)" />
+      </div>
+      <div class="foot"><button class="btn" id="save-user">Save</button></div>
+    </div>
+  </div>`;
+}
 
 // Image preview modal (phones)
 function imgPreviewModal(){
@@ -1106,9 +1060,7 @@ function imgPreviewModal(){
   <div class="modal img-modal" id="m-img">
     <div class="dialog">
       <div class="head"><strong>Preview</strong><button class="btn ghost" data-close="m-img">Close</button></div>
-      <div class="body">
-        <div class="imgbox"><img id="preview-img" src="" alt="Preview"/></div>
-      </div>
+      <div class="body"><div class="imgbox"><img id="preview-img" src="" alt="Preview"/></div></div>
     </div>
   </div>`;
 }
@@ -1118,153 +1070,15 @@ function openImg(src){
   openModal('m-img');
 }
 
-// Part 5/6 — Render + Wiring + Theme (immediate) + DnD
-// --- Render App ---------------------------------------------------------------
-function renderApp(){
-  if (!session) { renderLogin(); return; }
-  const root = $('#root');
-  root.innerHTML = `
-    <div class="app">
-      ${renderSidebar(currentRoute)}
-      <div>
-        ${renderTopbar()}
-        <div class="main" id="main">
-          ${
-            currentRoute==='home'      ? viewHome()
-          : currentRoute==='dashboard' ? viewDashboard()
-          : currentRoute==='inventory' ? viewInventory()
-          : currentRoute==='products'  ? viewProducts()
-          : currentRoute==='cogs'      ? viewCOGS()
-          : currentRoute==='tasks'     ? viewTasks()
-          : currentRoute==='settings'  ? viewSettings()
-          : currentRoute==='search'    ? viewSearch()
-          : viewPage(currentRoute)
-          }
-        </div>
-      </div>
-    </div>
-  `;
-
-  hookSidebarInteractions();
-
-  // Burger / backdrop / home / logout
-  $('#burger')?.addEventListener('click', openSidebar, { passive:true });
-  $('#backdrop')?.addEventListener('click', closeSidebar, { passive:true });
-  $('#btnHome')?.addEventListener('click', ()=> go('home'));
-  $('#btnLogout')?.addEventListener('click', doLogout);
-
-  // Dashboard/Home tiles click-through
-  $$('.tile').forEach(t=>{ t.onclick = ()=> { const r=t.getAttribute('data-go'); if (r) go(r); }; t.style.cursor='pointer'; });
-
-  // Search "Open" buttons in main pane
-  $$('#main [data-go]').forEach(btn=>{
-    btn.onclick = ()=>{
-      const r = btn.getAttribute('data-go'); const id = btn.getAttribute('data-id');
-      go(r);
-      if (id) setTimeout(()=> scrollToRow(id), 80);
-    };
-  });
-
-  // Wire sections
-    wirePosts?.();
-  wireInventory?.();
-  wireProducts?.();
-  wireCOGS?.();
-  wireTasks?.();
-  wireUsers?.();
-  wireProductCardClicks?.();
-  setupDnD?.();
-  if (currentRoute === 'settings') wireSettings?.();
-
-  // Contact form
-  if (currentRoute==='contact') {
-    $('#ct-send')?.addEventListener('click', ()=>{
-      const name = $('#ct-name').value.trim();
-      const email = $('#ct-email').value.trim();
-      const msg = $('#ct-msg').value.trim();
-      if (!name || !email || !msg) return notify('Please fill all fields','warn');
-      const list = load('contact_msgs', []);
-      list.push({ id: 'm_'+Date.now(), name, email, msg, at: Date.now() });
-      save('contact_msgs', list);
-      $('#ct-name').value=''; $('#ct-email').value=''; $('#ct-msg').value='';
-      notify('Message sent! (stored locally)');
-    });
-  }
-
-  // Close modal buttons
-  $$('[data-close]').forEach(b=> b.onclick = ()=> closeModal(b.getAttribute('data-close')));
-
-  // Mobile image preview
-  enableMobileImagePreview?.();
-
-  // Cloud controls
-  if (currentRoute==='settings'){
-    $('#cloud-toggle')?.addEventListener('change', async (e)=>{
-      const val = e.target.value;
-      try {
-        if (val === 'on'){ await cloud.enable(); notify('Cloud Sync ON'); }
-        else { cloud.disable(); notify('Cloud Sync OFF'); }
-      } catch(err){ notify(err.message || 'Could not enable sync','danger'); e.target.value = 'off'; }
-    });
-    $('#cloud-sync-now')?.addEventListener('click', async ()=>{
-      try { await cloud.pushAll(); notify('Synced'); } catch { notify('Sync failed','danger'); }
-    });
-  }
-}
-
+// Modal helpers
 function openModal(id){ $('#'+id)?.classList.add('active'); $('#mb-'+id.split('-')[1])?.classList.add('active'); }
 function closeModal(id){ $('#'+id)?.classList.remove('active'); $('#mb-'+id.split('-')[1])?.classList.remove('active'); }
 
-// --- Section wiring -----------------------------------------------------------
-// Posts
-function wirePosts(){
-  if ($('#addPost')) $('#addPost').onclick = ()=> openModal('m-post');
-  const sec = $('[data-section="posts"]'); if (!sec) return;
-
-  $('#save-post')?.addEventListener('click', ()=>{
-    const posts = load('posts', []);
-    const id = $('#post-id').value || ('post_'+Date.now());
-    const obj = {
-      id,
-      title: $('#post-title').value.trim(),
-      body: $('#post-body').value.trim(),
-      img: $('#post-img').value.trim(),
-      createdAt: Date.now()
-    };
-    if (!obj.title) return notify('Title required','warn');
-    const i = posts.findIndex(x=>x.id===id);
-    if (i>=0) posts[i]=obj; else posts.unshift(obj);
-    save('posts', posts); closeModal('m-post'); notify('Saved'); renderApp();
-  });
-
-  sec.addEventListener('click', (e)=>{
-    const btn = e.target.closest('button'); if (!btn) return;
-    const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
-    if (btn.hasAttribute('data-edit')) {
-      const posts = load('posts', []);
-      const p = posts.find(x=>x.id===id); if (!p) return;
-      openModal('m-post');
-      $('#post-id').value = p.id;
-      $('#post-title').value = p.title;
-      $('#post-body').value = p.body;
-      $('#post-img').value = p.img||'';
-    } else {
-      let posts = load('posts', []).filter(x=>x.id!==id);
-      save('posts', posts); notify('Deleted'); renderApp();
-    }
-  });
-}
-
+// --- Wiring sections ----------------------------------------------------------
 // Inventory
 function wireInventory(){
   if ($('#addInv')) $('#addInv').onclick = ()=> openModal('m-inv');
   const sec = $('[data-section="inventory"]'); if (!sec) return;
-
-  // Export
-  $('#export-inv')?.addEventListener('click', ()=>{
-    const rows = load('inventory', []);
-    download(`inventory-${new Date().toISOString().slice(0,10)}.csv`, toCSV(rows));
-  });
 
   $('#save-inv')?.addEventListener('click', ()=>{
     const items = load('inventory', []);
@@ -1288,7 +1102,9 @@ function wireInventory(){
   sec.addEventListener('click', (e)=>{
     const t = e.target;
     const btn = t.closest('button');
-    if (btn && btn.hasAttribute('data-edit')) {
+    if (!btn) return;
+
+    if (btn.hasAttribute('data-edit')) {
       const id = btn.getAttribute('data-edit');
       const items = load('inventory', []);
       const it = items.find(x=>x.id===id); if (!it) return;
@@ -1299,28 +1115,28 @@ function wireInventory(){
       $('#inv-threshold').value=it.threshold; $('#inv-img').value=it.img||'';
       return;
     }
-    if (btn && btn.hasAttribute('data-del')) {
+    if (btn.hasAttribute('data-del')) {
       const id = btn.getAttribute('data-del');
       let items = load('inventory', []).filter(x=>x.id!==id);
       save('inventory', items); notify('Deleted'); renderApp();
       return;
     }
-    if (btn && btn.hasAttribute('data-inc')) {
+    if (btn.hasAttribute('data-inc')) {
       const id = btn.getAttribute('data-inc');
       const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
       it.stock++; save('inventory', items); renderApp(); return;
     }
-    if (btn && btn.hasAttribute('data-dec')) {
+    if (btn.hasAttribute('data-dec')) {
       const id = btn.getAttribute('data-dec');
       const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
       it.stock=Math.max(0,it.stock-1); save('inventory', items); renderApp(); return;
     }
-    if (btn && btn.hasAttribute('data-inc-th')) {
+    if (btn.hasAttribute('data-inc-th')) {
       const id = btn.getAttribute('data-inc-th');
       const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
       it.threshold++; save('inventory', items); renderApp(); return;
     }
-    if (btn && btn.hasAttribute('data-dec-th')) {
+    if (btn.hasAttribute('data-dec-th')) {
       const id = btn.getAttribute('data-dec-th');
       const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
       it.threshold=Math.max(0,it.threshold-1); save('inventory', items); renderApp(); return;
@@ -1332,12 +1148,6 @@ function wireInventory(){
 function wireProducts(){
   if ($('#addProd')) $('#addProd').onclick = ()=> openModal('m-prod');
   const sec = $('[data-section="products"]'); if (!sec) return;
-
-  // Export
-  $('#export-prod')?.addEventListener('click', ()=>{
-    const rows = load('products', []);
-    download(`products-${new Date().toISOString().slice(0,10)}.csv`, toCSV(rows));
-  });
 
   $('#save-prod')?.addEventListener('click', ()=>{
     const items = load('products', []);
@@ -1359,23 +1169,22 @@ function wireProducts(){
   });
 
   sec.addEventListener('click', (e)=>{
-    const btn = e.target.closest('button'); if (btn) {
-      const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
-      if (btn.hasAttribute('data-edit')) {
-        const items = load('products', []); const it = items.find(x=>x.id===id); if (!it) return;
-        openModal('m-prod');
-        $('#prod-id').value=id; $('#prod-name').value=it.name; $('#prod-barcode').value=it.barcode;
-        $('#prod-price').value=it.price; $('#prod-type').value=it.type;
-        $('#prod-ingredients').value=it.ingredients; $('#prod-instructions').value=it.instructions; $('#prod-img').value=it.img||'';
-      } else {
-        let items = load('products', []).filter(x=>x.id!==id);
-        save('products', items); notify('Deleted'); renderApp();
-      }
+    const btn = e.target.closest('button'); if (!btn) return;
+    const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
+    if (btn.hasAttribute('data-edit')) {
+      const items = load('products', []); const it = items.find(x=>x.id===id); if (!it) return;
+      openModal('m-prod');
+      $('#prod-id').value=id; $('#prod-name').value=it.name; $('#prod-barcode').value=it.barcode;
+      $('#prod-price').value=it.price; $('#prod-type').value=it.type;
+      $('#prod-ingredients').value=it.ingredients; $('#prod-instructions').value=it.instructions; $('#prod-img').value=it.img||'';
+    } else {
+      let items = load('products', []).filter(x=>x.id!==id);
+      save('products', items); notify('Deleted'); renderApp();
     }
   });
 }
 
-// Product card modal trigger
+// Product card clicks -> preview modal
 function wireProductCardClicks(){
   $$('.prod-thumb').forEach(el=>{
     el.style.cursor = 'pointer';
@@ -1395,7 +1204,7 @@ function wireProductCardClicks(){
   });
 }
 
-// Mobile image preview
+// Phone tap-to-enlarge
 function enableMobileImagePreview(){
   const isPhone = window.matchMedia('(max-width: 740px)').matches;
   if (!isPhone) return;
@@ -1412,12 +1221,6 @@ function enableMobileImagePreview(){
 function wireCOGS(){
   if ($('#addCOGS')) $('#addCOGS').onclick = ()=> openModal('m-cogs');
   const sec = $('[data-section="cogs"]'); if (!sec) return;
-
-  // Export
-  $('#export-cogs')?.addEventListener('click', ()=>{
-    const rows = load('cogs', []);
-    download(`cogs-${new Date().toISOString().slice(0,10)}.csv`, toCSV(rows));
-  });
 
   $('#save-cogs')?.addEventListener('click', ()=>{
     const rows = load('cogs', []);
@@ -1454,7 +1257,7 @@ function wireCOGS(){
   });
 }
 
-// Tasks DnD with empty-lane dropping
+// Tasks DnD + wiring
 function setupDnD(){
   const lanes = ['todo','inprogress','done'];
   const allow = {
@@ -1463,34 +1266,87 @@ function setupDnD(){
     'done':       new Set(['todo','inprogress'])
   };
 
-  lanes.forEach(k=>{
-    const lane = $('#lane-'+k); if (!lane) return;
-    const parentCard = lane.closest('.lane-row');
+  const dropInto = (k, id)=>{
+    const items = load('tasks', []);
+    const t = items.find(x=>x.id===id); if (!t) return;
+    if (!allow[t.status].has(k)) { notify('Move not allowed','warn'); return; }
+    t.status = k; save('tasks', items); renderApp();
+  };
 
-    lane.ondragover = (e)=>{
-      e.preventDefault();
-      const id = e.dataTransfer?.getData('text/plain');
-      if (!id) { parentCard?.classList.remove('drop'); return; }
-      const items = load('tasks', []); const t = items.find(x=>x.id===id);
-      if (!t) return;
-      if (allow[t.status].has(k)) parentCard?.classList.add('drop');
-      else parentCard?.classList.remove('drop');
-    };
-    lane.ondragenter = (e)=>{ e.preventDefault(); };
-    lane.ondragleave = ()=> { parentCard?.classList.remove('drop'); };
-    lane.ondrop = (e)=>{
-      e.preventDefault();
-      parentCard?.classList.remove('drop');
-      const id = e.dataTransfer.getData('text/plain');
+  lanes.forEach(k=>{
+    const grid = document.getElementById('lane-'+k);
+    const rowCard = grid?.closest('.lane-row');
+
+    const over = (id)=>{
       const items = load('tasks', []);
-      const t = items.find(x=>x.id===id); if (!t) return;
-      if (!allow[t.status].has(k)) { notify('Move not allowed','warn'); return; }
-      t.status = k; save('tasks', items); renderApp();
+      const t = items.find(x=>x.id===id);
+      if (!t) return false;
+      const ok = allow[t.status].has(k);
+      if (ok) rowCard?.classList.add('drop'); else rowCard?.classList.remove('drop');
+      return ok;
     };
+
+    if (grid){
+      grid.ondragover = (e)=>{
+        e.preventDefault();
+        const id = e.dataTransfer?.getData('text/plain');
+        if (id) over(id);
+      };
+      grid.ondragleave = ()=> rowCard?.classList.remove('drop');
+      grid.ondrop = (e)=>{
+        e.preventDefault();
+        rowCard?.classList.remove('drop');
+        const id = e.dataTransfer?.getData('text/plain');
+        if (id) dropInto(k, id);
+      };
+    }
+
+    const zone = grid?.querySelector('.lane-dropzone');
+    if (zone){
+      zone.ondragover = (e)=>{
+        e.preventDefault();
+        const id = e.dataTransfer?.getData('text/plain');
+        if (id) over(id);
+      };
+      zone.ondragleave = ()=> rowCard?.classList.remove('drop');
+      zone.ondrop = (e)=>{
+        e.preventDefault();
+        rowCard?.classList.remove('drop');
+        const id = e.dataTransfer?.getData('text/plain');
+        if (id) dropInto(k, id);
+      };
+    }
   });
 
-  $$('[data-task]').forEach(card=>{
-    card.ondragstart = (e)=> { e.dataTransfer.setData('text/plain', card.getAttribute('data-task')); };
+  document.querySelectorAll('[data-task]').forEach(card=>{
+    card.ondragstart = (e)=> {
+      e.dataTransfer.setData('text/plain', card.getAttribute('data-task'));
+    };
+  });
+}
+function wireTasks(){
+  const root = $('[data-section="tasks"]'); if (!root) return;
+  if ($('#addTask')) $('#addTask').onclick = ()=> openModal('m-task');
+
+  $('#save-task')?.addEventListener('click', ()=>{
+    const items = load('tasks', []);
+    const id = $('#task-id').value || ('t_'+Date.now());
+    const obj = { id, title: $('#task-title').value.trim(), status: $('#task-status').value };
+    const i = items.findIndex(x=>x.id===id);
+    if (i>=0) items[i]=obj; else items.push(obj);
+    save('tasks',items); closeModal('m-task'); notify('Saved'); renderApp();
+  });
+
+  root.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if (!btn) return;
+    const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
+    if (btn.hasAttribute('data-edit')) {
+      const items = load('tasks', []); const t = items.find(x=>x.id===id); if (!t) return;
+      openModal('m-task'); $('#task-id').value = t.id; $('#task-title').value = t.title; $('#task-status').value = t.status;
+    } else {
+      let items = load('tasks', []).filter(x=>x.id!==id);
+      save('tasks', items); notify('Deleted'); renderApp();
+    }
   });
 }
 
@@ -1533,50 +1389,41 @@ function wireUsers(){
   });
 }
 
-// Theme dropdowns (IMMEDIATE apply; no full re-render)
+// Settings wiring (instant theme + cloud controls)
 function wireSettings(){
-  const mode = $('#theme-mode');
-  const size = $('#theme-size');
-  const toggle = $('#cloud-toggle');
-  const syncBtn = $('#cloud-sync-now');
+  wireUsers?.();
 
-  // Theme listeners (instant apply)
-  if (mode) mode.onchange = ()=>{
-    const t = { mode: mode.value, size: (size?.value || 'medium') };
-    save('_theme2', t); applyTheme();
-    // no full re-render needed, but safe:
-    renderApp();
-  };
-  if (size) size.onchange = ()=>{
-    const t = { mode: (mode?.value || 'aqua'), size: size.value };
-    save('_theme2', t); applyTheme();
-    renderApp();
-  };
+  const mode = $('#theme-mode'); const size = $('#theme-size');
+  if (mode && size){
+    const apply = ()=>{
+      const t = { mode: mode.value, size: size.value };
+      save('_theme2', t);
+      applyTheme();         // instant apply
+      renderApp();          // re-render to refresh UI colors
+    };
+    mode.onchange = apply;
+    size.onchange = apply;
+  }
 
-  // Cloud toggle
-  if (toggle) {
+  const toggle = $('#cloud-toggle'); const syncNow = $('#cloud-sync-now');
+  if (toggle){
     toggle.onchange = async (e)=>{
       const val = e.target.value;
       try {
         if (val === 'on'){ await cloud.enable(); notify('Cloud Sync ON'); }
         else { cloud.disable(); notify('Cloud Sync OFF'); }
-      } catch(err){
-        notify(err.message || 'Could not enable sync','danger');
-        e.target.value = 'off';
-      }
+      } catch(err){ notify(err.message || 'Could not enable sync','danger'); e.target.value = 'off'; }
     };
   }
-
-  // Sync now
-  if (syncBtn) {
-    syncBtn.onclick = async ()=>{
+  if (syncNow){
+    syncNow.onclick = async ()=>{
       try { await cloud.pushAll(); notify('Synced'); }
       catch { notify('Sync failed','danger'); }
     };
   }
 }
 
-// Part 6/6 — Search, Scroll, Initial render
+// Part 6 — Search index + utilities + boot
 // --- Search helpers & jump ----------------------------------------------------
 function buildSearchIndex(){
   const posts = load('posts', []);
@@ -1602,7 +1449,6 @@ function buildSearchIndex(){
   pages.forEach(p => ix.push(p));
   return ix;
 }
-
 function searchAll(index, q){
   const term = q.toLowerCase();
   return index
@@ -1615,15 +1461,14 @@ function searchAll(index, q){
     .sort((a,b) => b.score - a.score)
     .map(x => x.item);
 }
-
 function scrollToRow(id){
   const el = document.getElementById(id);
   if (el) el.scrollIntoView({ behavior:'smooth', block:'center' });
 }
 
-// Initial render
+// Initial render (if session already in localStorage, e.g., after refresh)
 if (session) renderApp();
 if (!session) renderLogin();
 
-// Expose for debugging
-window._inventory = { go, load, save };
+// Expose for console debugging
+window._inventory = { go, load, save, cloud };
