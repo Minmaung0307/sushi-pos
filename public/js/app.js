@@ -1336,11 +1336,6 @@ function wireCOGS(){
 // Tasks DnD + wiring
 function setupDnD(){
   const lanes = ['todo','inprogress','done'];
-  const allow = {
-    'todo':       new Set(['inprogress','done']),
-    'inprogress': new Set(['todo','done']),
-    'done':       new Set(['todo','inprogress'])
-  };
 
   // 1) Make each task draggable and remember the dragged id globally
   $$('[data-task]').forEach(card=>{
@@ -1365,10 +1360,8 @@ function setupDnD(){
 
     const onOver = (e)=>{
       e.preventDefault(); // required to allow dropping
-      if (!DRAG_ID){ parentRow?.classList.remove('drop'); return; }
-      const items = load('tasks', []);
-      const t = items.find(x=>x.id===DRAG_ID);
-      if (t && allow[t.status].has(k)) parentRow?.classList.add('drop'); else parentRow?.classList.remove('drop');
+      // With "free move", if there's a dragged card, show highlight
+      if (DRAG_ID) parentRow?.classList.add('drop'); else parentRow?.classList.remove('drop');
     };
     const onLeave = ()=> parentRow?.classList.remove('drop');
     const onDrop = (e)=>{
@@ -1379,14 +1372,14 @@ function setupDnD(){
       const items = load('tasks', []);
       const t = items.find(x=>x.id===DRAG_ID); if (!t) return;
 
-      if (!allow[t.status].has(k)) { notify('Move not allowed','warn'); return; }
+      // FREE MOVE: allow to move to any lane (including from empty -> empty)
       t.status = k;
       save('tasks', items);
       DRAG_ID = null;
       renderApp();
     };
 
-    // lane container
+    // lane container (works when it has cards)
     if (laneGrid){
       laneGrid.ondragover  = onOver;
       laneGrid.ondragenter = (e)=> e.preventDefault();
