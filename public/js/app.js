@@ -383,12 +383,12 @@ function renderApp(){
   });
 
   // Wire sections
-  if (currentRoute==='dashboard')  wireDashboard?.();
-  if (currentRoute==='inventory')  wireInventory?.();
-  if (currentRoute==='products')   wireProducts?.();
-  if (currentRoute==='cogs')       wireCOGS?.();
-  if (currentRoute==='tasks')      { wireTasks?.(); setupDnD?.(); }
-  if (currentRoute==='settings')   wireSettings?.();
+if (currentRoute==='dashboard')  { wireDashboard?.(); wirePosts?.(); }  // <- add wirePosts here
+if (currentRoute==='inventory')  wireInventory?.();
+if (currentRoute==='products')   { wireProducts?.(); wireProductCardClicks?.(); } // <- add product card clicks
+if (currentRoute==='cogs')       wireCOGS?.();
+if (currentRoute==='tasks')      { wireTasks?.(); setupDnD?.(); }
+if (currentRoute==='settings')   { wireSettings?.(); wireUsers?.(); } // <- add wireUsers here
 
   // Mobile image preview support
   enableMobileImagePreview?.();
@@ -461,42 +461,55 @@ const USD = x => `$${Number(x||0).toFixed(2)}`;
 const VIDEO_ID = 'ysz5S6PUM-U'; // sample public video
 
 function viewHome(){
-  const quick = [
-    {label:'Inventory', route:'inventory', icon:'ri-archive-2-line'},
-    {label:'Products',  route:'products',  icon:'ri-store-2-line'},
-    {label:'COGS',      route:'cogs',      icon:'ri-money-dollar-circle-line'},
-    {label:'Tasks',     route:'tasks',     icon:'ri-list-check-2'}
-  ];
   return `
     <div class="card">
       <div class="card-body">
         <h3 style="margin-top:0">Welcome 👋</h3>
-        <p style="color:var(--muted)">Pick a section to get started.</p>
-        <div class="grid cols-4 auto">
-          ${quick.map(q=>`<div class="card tile" data-go="${q.route}">
-              <div class="card-body" style="display:flex;gap:10px;align-items:center">
-                <i class="${q.icon}"></i><div><div>${q.label}</div></div>
-              </div>
-            </div>`).join('')}
-        </div>
-      </div>
-    </div>
+        <p style="color:var(--muted)">Pick a section to get started, or watch a quick intro to inventory.</p>
 
-    <div class="card" style="margin-top:16px">
-      <div class="card-body">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <h3 style="margin:0">What is Inventory?</h3>
-          <a class="btn ghost" href="https://www.youtube.com/watch?v=${VIDEO_ID}" target="_blank" rel="noopener">Open on YouTube</a>
+        <div class="grid cols-4 auto" style="margin-bottom:12px">
+          <div class="card tile" data-go="inventory">
+            <div class="card-body" style="display:flex;gap:10px;align-items:center">
+              <i class="ri-archive-2-line"></i><div><div>Inventory</div></div>
+            </div>
+          </div>
+          <div class="card tile" data-go="products">
+            <div class="card-body" style="display:flex;gap:10px;align-items:center">
+              <i class="ri-store-2-line"></i><div><div>Products</div></div>
+            </div>
+          </div>
+          <div class="card tile" data-go="cogs">
+            <div class="card-body" style="display:flex;gap:10px;align-items:center">
+              <i class="ri-money-dollar-circle-line"></i><div><div>COGS</div></div>
+            </div>
+          </div>
+          <div class="card tile" data-go="tasks">
+            <div class="card-body" style="display:flex;gap:10px;align-items:center">
+              <i class="ri-list-check-2"></i><div><div>Tasks</div></div>
+            </div>
+          </div>
         </div>
-        <div style="position:relative;padding-top:56.25%;border:1px solid var(--card-border);border-radius:12px;overflow:hidden">
-          <iframe
-            src="https://www.youtube.com/embed/${VIDEO_ID}"
-            title="What is Inventory?"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowfullscreen
-            style="position:absolute;inset:0;width:100%;height:100%;border:0">
-          </iframe>
+
+        <div class="grid">
+          <div class="card">
+            <div class="card-body">
+              <h4 style="margin:0 0 10px 0">What is Inventory?</h4>
+              <video
+                style="width:100%;border-radius:12px;border:1px solid var(--card-border)"
+                controls
+                playsinline
+                preload="metadata"
+                poster="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.jpg">
+                <source src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" type="video/mp4" />
+                Your browser does not support HTML5 video.
+              </video>
+              <div style="color:var(--muted);font-size:12px;margin-top:6px">
+                If the video doesn't play, <a href="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" target="_blank" rel="noopener">open it in a new tab</a>.
+              </div>
+            </div>
+          </div>
         </div>
+
       </div>
     </div>
   `;
@@ -537,8 +550,9 @@ function viewDashboard(){
   const prods = load('products', []);
   const users = load('users', []);
   const tasks = load('tasks', []);
-  const low   = inv.filter(i=>i.stock <= i.threshold && i.stock > Math.max(1, Math.floor(i.threshold*0.6))).length;
-  const crit  = inv.filter(i=>i.stock <= Math.max(1, Math.floor(i.threshold*0.6))).length;
+
+  const lowCt  = inv.filter(i => i.stock <= i.threshold && i.stock > Math.max(1, Math.floor(i.threshold*0.6))).length;
+  const critCt = inv.filter(i => i.stock <= Math.max(1, Math.floor(i.threshold*0.6))).length;
 
   return `
     <div class="grid cols-4 auto">
@@ -548,40 +562,101 @@ function viewDashboard(){
       <div class="card tile" data-go="tasks"><div>Tasks</div><h2>${tasks.length}</h2></div>
     </div>
 
-    <div class="grid cols-3" style="margin-top:16px">
-      <div class="card">
-        <div class="card-body">
-          <h3 style="margin:0 0 8px">Warnings</h3>
-          <div style="display:flex;gap:12px">
-            <div class="btn warn" style="pointer-events:none">Low: ${low}</div>
-            <div class="btn danger" style="pointer-events:none">Critical: ${crit}</div>
-          </div>
-        </div>
+    <div class="grid cols-4 auto" style="margin-top:12px">
+      <div class="card" style="border-left:4px solid var(--warn)">
+        <div class="card-body"><strong>Low stock</strong><div style="color:var(--muted)">${lowCt}</div></div>
       </div>
-
-      <div class="card">
-        <div class="card-body">
-          <h3 style="margin:0 0 8px">Tasks</h3>
-          <div class="grid">
-            ${tasks.slice(0,6).map(t=>`<div class="card"><div class="card-body" style="display:flex;justify-content:space-between"><span>${t.title}</span><span style="color:var(--muted)">${t.status}</span></div></div>`).join('') || '<p style="color:var(--muted)">No tasks yet.</p>'}
-          </div>
-          <div style="margin-top:10px;text-align:right"><button class="btn ghost" data-go="tasks">Open Tasks</button></div>
-        </div>
+      <div class="card" style="border-left:4px solid var(--danger)">
+        <div class="card-body"><strong>Critical</strong><div style="color:var(--muted)">${critCt}</div></div>
       </div>
+      <div class="card" data-go="cogs"><div class="card-body"><strong>COGS</strong><div style="color:var(--muted)">View details</div></div></div>
+      <div class="card" data-go="tasks"><div class="card-body"><strong>Tasks</strong><div style="color:var(--muted)">Manage lanes</div></div></div>
+    </div>
 
-      <div class="card">
-        <div class="card-body">
-          <h3 style="margin:0 0 8px">Posts</h3>
-          <div class="grid">
-            ${posts.map(p=>`<div class="card"><div class="card-body"><strong>${p.title}</strong><div style="color:var(--muted);font-size:12px">${new Date(p.createdAt).toLocaleString()}</div></div></div>`).join('') || '<p style="color:var(--muted)">No posts.</p>'}
-          </div>
-          <div style="margin-top:10px;text-align:right"><button class="btn ghost" data-go="dashboard">Refresh</button></div>
+    <div class="card" style="margin-top:16px">
+      <div class="card-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="margin:0">Posts</h3>
+          ${canCreate() ? `<button class="btn" id="addPost"><i class="ri-add-line"></i> Add Post</button>` : ''}
+        </div>
+        <div class="grid" data-section="posts" style="grid-template-columns: 1fr;">
+          ${posts.map(p => `
+            <div class="card" id="${p.id}">
+              <div class="card-body">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div><strong>${p.title}</strong><div style="color:var(--muted);font-size:12px">${new Date(p.createdAt).toLocaleString()}</div></div>
+                  <div>
+                    ${canCreate()?`
+                      <button class="btn ghost" data-edit="${p.id}"><i class="ri-edit-line"></i></button>
+                      <button class="btn danger" data-del="${p.id}"><i class="ri-delete-bin-6-line"></i></button>`:''}
+                  </div>
+                </div>
+                ${p.img?`<img src="${p.img}" style="width:100%;border-radius:12px;margin-top:10px;border:1px solid var(--card-border)"/>`:''}
+                <p style="margin-top:8px">${p.body}</p>
+              </div>
+            </div>`).join('')}
         </div>
       </div>
     </div>
+
+    ${postModal()}
   `;
 }
-function wireDashboard(){ /* nothing special yet */ }
+
+function wireDashboard(){
+  // 1) Make the "Add Post" button open the Post modal
+  //    (button is rendered in viewDashboard only for admins/managers)
+  const addPostBtn = document.getElementById('addPost');
+  if (addPostBtn) {
+    addPostBtn.onclick = () => openModal('m-post');
+  }
+
+  // 2) Ensure the "Users" tile navigates to Settings (Users table is there)
+  //    Some builds already wire .tile clicks globally, but this is a safe fallback.
+  const usersTile = document.querySelector('.tile[data-go="settings"]');
+  if (usersTile) {
+    usersTile.style.cursor = 'pointer';
+    usersTile.onclick = () => go('settings');
+  }
+}
+
+function wirePosts(){
+  if (canCreate() && $('#addPost')) $('#addPost').onclick = ()=> openModal('m-post');
+  const sec = $('[data-section="posts"]'); if (!sec) return;
+
+  $('#save-post')?.addEventListener('click', ()=>{
+    const posts = load('posts', []);
+    const id = $('#post-id').value || ('post_'+Date.now());
+    const obj = {
+      id,
+      title: $('#post-title').value.trim(),
+      body: $('#post-body').value.trim(),
+      img: $('#post-img').value.trim(),
+      createdAt: Date.now()
+    };
+    if (!obj.title) return notify('Title required','warn');
+    const i = posts.findIndex(x=>x.id===id);
+    if (i>=0) posts[i]=obj; else posts.unshift(obj);
+    save('posts', posts); closeModal('m-post'); notify('Saved'); renderApp();
+  });
+
+  sec.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if (!btn) return;
+    const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
+    if (btn.hasAttribute('data-edit')) {
+      const posts = load('posts', []);
+      const p = posts.find(x=>x.id===id); if (!p) return;
+      openModal('m-post');
+      $('#post-id').value = p.id;
+      $('#post-title').value = p.title;
+      $('#post-body').value = p.body;
+      $('#post-img').value = p.img||'';
+    } else {
+      let posts = load('posts', []).filter(x=>x.id!==id);
+      save('posts', posts); notify('Deleted'); renderApp();
+    }
+  });
+}
 
 // Part 4 — Inventory, Products, COGS, Tasks (with empty-lane drop) + Settings + Static pages
 // Inventory
@@ -755,15 +830,15 @@ function viewCOGS(){
 // Tasks (with empty-lane drop)
 function viewTasks(){
   const items = load('tasks', []);
-  const lane = (key, label)=>`
+  const lane = (key, label, color)=>`
     <div class="card lane-row" data-lane="${key}">
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <h3 style="margin:0">${label}</h3>
-          ${key==='todo' ? `<button class="btn" id="addTask"><i class="ri-add-line"></i> Add Task</button>`:''}
+          <h3 style="margin:0;color:${color}">${label}</h3>
+          ${key==='todo' && canCreate()? `<button class="btn" id="addTask"><i class="ri-add-line"></i> Add Task</button>`:''}
         </div>
-        <div class="lane-grid" id="lane-${key}">
-          <div class="lane-dropzone" data-zone="${key}"></div>
+        <div class="grid lane-grid" id="lane-${key}">
+          <div class="lane-dropzone" data-dropzone="${key}"></div>
           ${items.filter(t=>t.status===key).map(t=>`
             <div class="card task-card" id="${t.id}" draggable="true" data-task="${t.id}">
               <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
@@ -782,9 +857,9 @@ function viewTasks(){
   `;
   return `
     <div data-section="tasks">
-      ${lane('todo','To do')}
-      ${lane('inprogress','In progress')}
-      ${lane('done','Done')}
+      ${lane('todo','To do','#f59e0b')}
+      ${lane('inprogress','In progress','#3b82f6')}
+      ${lane('done','Done','#10b981')}
     </div>
     ${taskModal()}
   `;
@@ -1266,64 +1341,55 @@ function setupDnD(){
     'done':       new Set(['todo','inprogress'])
   };
 
-  const dropInto = (k, id)=>{
-    const items = load('tasks', []);
-    const t = items.find(x=>x.id===id); if (!t) return;
-    if (!allow[t.status].has(k)) { notify('Move not allowed','warn'); return; }
-    t.status = k; save('tasks', items); renderApp();
-  };
-
-  lanes.forEach(k=>{
-    const grid = document.getElementById('lane-'+k);
-    const rowCard = grid?.closest('.lane-row');
-
-    const over = (id)=>{
-      const items = load('tasks', []);
-      const t = items.find(x=>x.id===id);
-      if (!t) return false;
-      const ok = allow[t.status].has(k);
-      if (ok) rowCard?.classList.add('drop'); else rowCard?.classList.remove('drop');
-      return ok;
-    };
-
-    if (grid){
-      grid.ondragover = (e)=>{
-        e.preventDefault();
-        const id = e.dataTransfer?.getData('text/plain');
-        if (id) over(id);
-      };
-      grid.ondragleave = ()=> rowCard?.classList.remove('drop');
-      grid.ondrop = (e)=>{
-        e.preventDefault();
-        rowCard?.classList.remove('drop');
-        const id = e.dataTransfer?.getData('text/plain');
-        if (id) dropInto(k, id);
-      };
-    }
-
-    const zone = grid?.querySelector('.lane-dropzone');
-    if (zone){
-      zone.ondragover = (e)=>{
-        e.preventDefault();
-        const id = e.dataTransfer?.getData('text/plain');
-        if (id) over(id);
-      };
-      zone.ondragleave = ()=> rowCard?.classList.remove('drop');
-      zone.ondrop = (e)=>{
-        e.preventDefault();
-        rowCard?.classList.remove('drop');
-        const id = e.dataTransfer?.getData('text/plain');
-        if (id) dropInto(k, id);
-      };
-    }
-  });
-
-  document.querySelectorAll('[data-task]').forEach(card=>{
+  // card drag start
+  $$('[data-task]').forEach(card=>{
     card.ondragstart = (e)=> {
       e.dataTransfer.setData('text/plain', card.getAttribute('data-task'));
     };
   });
+
+  // dropzones & lane containers accept drops even when empty
+  lanes.forEach(k=>{
+    const laneGrid = $('#lane-'+k);
+    const dropzone = document.querySelector(`.lane-dropzone[data-dropzone="${k}"]`);
+    const parentCard = laneGrid?.closest('.lane-row');
+
+    const over = (e)=>{
+      e.preventDefault();
+      const id = e.dataTransfer?.getData('text/plain');
+      if (!id) return parentCard?.classList.remove('drop');
+      const items = load('tasks', []);
+      const t = items.find(x=>x.id===id); if (!t) return parentCard?.classList.remove('drop');
+      if (allow[t.status].has(k)) parentCard?.classList.add('drop'); else parentCard?.classList.remove('drop');
+    };
+    const leave = ()=> parentCard?.classList.remove('drop');
+    const drop = (e)=>{
+      e.preventDefault();
+      parentCard?.classList.remove('drop');
+      const id = e.dataTransfer.getData('text/plain');
+      const items = load('tasks', []);
+      const t = items.find(x=>x.id===id); if (!t) return;
+      if (!allow[t.status].has(k)) { notify('Move not allowed','warn'); return; }
+      t.status = k; save('tasks', items); renderApp();
+    };
+
+    // lane container
+    if (laneGrid){
+      laneGrid.ondragover = over;
+      laneGrid.ondragenter = (e)=> e.preventDefault();
+      laneGrid.ondragleave = leave;
+      laneGrid.ondrop = drop;
+    }
+    // always-present dropzone
+    if (dropzone){
+      dropzone.ondragover = over;
+      dropzone.ondragenter = (e)=> e.preventDefault();
+      dropzone.ondragleave = leave;
+      dropzone.ondrop = drop;
+    }
+  });
 }
+
 function wireTasks(){
   const root = $('[data-section="tasks"]'); if (!root) return;
   if ($('#addTask')) $('#addTask').onclick = ()=> openModal('m-task');
@@ -1391,35 +1457,57 @@ function wireUsers(){
 
 // Settings wiring (instant theme + cloud controls)
 function wireSettings(){
-  wireUsers?.();
-
+  // Theme instant-apply
   const mode = $('#theme-mode'); const size = $('#theme-size');
   if (mode && size){
     const apply = ()=>{
       const t = { mode: mode.value, size: size.value };
-      save('_theme2', t);
-      applyTheme();         // instant apply
-      renderApp();          // re-render to refresh UI colors
+      save('_theme2', t); applyTheme();
+      // no full re-render needed, but do it so cards/panels recolor instantly
+      renderApp();
     };
     mode.onchange = apply;
     size.onchange = apply;
   }
 
-  const toggle = $('#cloud-toggle'); const syncNow = $('#cloud-sync-now');
+  // Cloud controls
+  const toggle = $('#cloud-toggle');
+  const syncNow = $('#cloud-sync-now');
+
   if (toggle){
-    toggle.onchange = async (e)=>{
+    toggle.addEventListener('change', async (e)=>{
       const val = e.target.value;
       try {
-        if (val === 'on'){ await cloud.enable(); notify('Cloud Sync ON'); }
-        else { cloud.disable(); notify('Cloud Sync OFF'); }
-      } catch(err){ notify(err.message || 'Could not enable sync','danger'); e.target.value = 'off'; }
-    };
+        if (val === 'on'){
+          if (!auth.currentUser){ notify('Sign in first.','warn'); toggle.value='off'; return; }
+          await firebase.database().goOnline();
+          await cloud.enable();
+          notify('Cloud Sync ON');
+        } else {
+          cloud.disable();
+          await firebase.database().goOffline();
+          notify('Cloud Sync OFF');
+        }
+      } catch(err){
+        notify(err?.message || 'Could not change sync','danger');
+        toggle.value = cloud.isOn() ? 'on' : 'off';
+      }
+    });
   }
+
   if (syncNow){
-    syncNow.onclick = async ()=>{
-      try { await cloud.pushAll(); notify('Synced'); }
-      catch { notify('Sync failed','danger'); }
-    };
+    syncNow.addEventListener('click', async ()=>{
+      try{
+        if (!auth.currentUser){ notify('Sign in first.','warn'); return; }
+        if (!cloud.isOn()){ notify('Turn Cloud Sync ON first in Settings.','warn'); return; }
+        if (!navigator.onLine){ notify('You appear to be offline. Check your connection.','warn'); return; }
+        await firebase.database().goOnline(); // ensure client is online
+        await cloud.pushAll();
+        notify('Synced');
+      }catch(e){
+        notify((e && e.message) || 'Sync failed','danger');
+      }
+    });
   }
 }
 
