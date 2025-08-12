@@ -463,6 +463,24 @@ function viewHome(){
         </div>
       </div>
     </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="margin:0">Quick Start Video</h3>
+          <a class="btn ghost" href="https://www.youtube.com/watch?v=VIDEO_ID" target="_blank" rel="noopener">Open on YouTube</a>
+        </div>
+        <div style="position:relative;padding-top:56.25%;border:1px solid var(--card-border);border-radius:12px;overflow:hidden">
+          <iframe
+            src="https://www.youtube.com/embed/VIDEO_ID"
+            title="Inventory — quick start"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen
+            style="position:absolute;inset:0;width:100%;height:100%;border:0">
+          </iframe>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -1148,15 +1166,15 @@ function renderApp(){
   });
 
   // Wire sections
-  wirePosts?.();
+    wirePosts?.();
   wireInventory?.();
   wireProducts?.();
   wireCOGS?.();
   wireTasks?.();
   wireUsers?.();
-  wireTheme?.();
   wireProductCardClicks?.();
   setupDnD?.();
+  if (currentRoute === 'settings') wireSettings?.();
 
   // Contact form
   if (currentRoute==='contact') {
@@ -1516,16 +1534,46 @@ function wireUsers(){
 }
 
 // Theme dropdowns (IMMEDIATE apply; no full re-render)
-function wireTheme(){
-  const mode = $('#theme-mode'); const size = $('#theme-size');
-  if (!mode || !size) return;
-  const apply = ()=>{
-    const t = { mode: mode.value, size: size.value };
-    save('_theme2', t);
-    applyTheme(); // instant via CSS vars
+function wireSettings(){
+  const mode = $('#theme-mode');
+  const size = $('#theme-size');
+  const toggle = $('#cloud-toggle');
+  const syncBtn = $('#cloud-sync-now');
+
+  // Theme listeners (instant apply)
+  if (mode) mode.onchange = ()=>{
+    const t = { mode: mode.value, size: (size?.value || 'medium') };
+    save('_theme2', t); applyTheme();
+    // no full re-render needed, but safe:
+    renderApp();
   };
-  mode.onchange = apply;
-  size.onchange = apply;
+  if (size) size.onchange = ()=>{
+    const t = { mode: (mode?.value || 'aqua'), size: size.value };
+    save('_theme2', t); applyTheme();
+    renderApp();
+  };
+
+  // Cloud toggle
+  if (toggle) {
+    toggle.onchange = async (e)=>{
+      const val = e.target.value;
+      try {
+        if (val === 'on'){ await cloud.enable(); notify('Cloud Sync ON'); }
+        else { cloud.disable(); notify('Cloud Sync OFF'); }
+      } catch(err){
+        notify(err.message || 'Could not enable sync','danger');
+        e.target.value = 'off';
+      }
+    };
+  }
+
+  // Sync now
+  if (syncBtn) {
+    syncBtn.onclick = async ()=>{
+      try { await cloud.pushAll(); notify('Synced'); }
+      catch { notify('Sync failed','danger'); }
+    };
+  }
 }
 
 // Part 6/6 — Search, Scroll, Initial render
