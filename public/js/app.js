@@ -1,7 +1,7 @@
 // /* <div class="logo">🍣</div> */
-
-// Part 1 — Firebase (Auth + RTDB) + helpers + theme + cloud + auth flow
-// --- Firebase (Auth + Realtime Database) 
+// public/js/app.js (1/6)
+// Firebase + helpers + theme + cloud + auth + login (with mobile-friendly form) + video rotator helpers
+// --- Firebase (Auth + Realtime Database)
 const firebaseConfig = {
   apiKey: "AIzaSyBY52zMMQqsvssukui3TfQnMigWoOzeKGk",
   authDomain: "you-6bddf.firebaseapp.com",
@@ -12,12 +12,16 @@ const firebaseConfig = {
   appId: "1:909622476838:web:1a1fb221a6a79fcaf4a6e7",
   measurementId: "G-M8Q8EJ4T7Q"
 };
-
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db   = firebase.database();
 
-// --- DOM helpers --------------------------------------------------------------
+// Persist sessions (better on iOS/Safari mobile)
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch((e)=>{
+  console.warn('Auth persistence warning:', e?.message || e);
+});
+
+// --- DOM helpers
 const $  = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 const notify = (msg, type='ok') => {
@@ -34,21 +38,20 @@ function load(key, fallback){
   catch { return fallback; }
 }
 
-// --- Globals & Prefill --------------------------------------------------------
+// --- Globals & Prefill
 const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com'];
-let session = load('session', null);
+let session     = load('session', null);
 let currentRoute = load('_route', 'home');
 let searchQuery  = load('_searchQ', '');
-let DRAG_ID = null;   // current dragged task id (for reliable DnD across all browsers)
 
-// One-time seed (local)
+// Seed demo data (local, once)
 (function seedOnFirstRun(){
   if (load('_seeded', false)) return;
   const now = Date.now();
   const users = [
-    { name:'Admin',   username:'admin',   email:'admin@sushi.com',           contact:'', role:'admin',   password:'', img:'' },
-    { name:'Manager', username:'manager', email:'minmaung0307@gmail.com',    contact:'', role:'manager', password:'', img:'' },
-    { name:'Cashier', username:'cashier1',email:'cashier@sushi.com',         contact:'', role:'user',    password:'', img:'' },
+    { name:'Admin',   username:'admin',   email:'admin@sushi.com',         contact:'', role:'admin',   password:'', img:'' },
+    { name:'Manager', username:'manager', email:'minmaung0307@gmail.com',  contact:'', role:'manager', password:'', img:'' },
+    { name:'Cashier', username:'cashier1',email:'cashier@sushi.com',       contact:'', role:'user',    password:'', img:'' },
   ];
   const inventory = [
     { id:'inv1', img:'', name:'Nori Sheets', code:'NOR-100', type:'Dry', price:3.00, stock:80, threshold:30 },
@@ -74,7 +77,7 @@ let DRAG_ID = null;   // current dragged task id (for reliable DnD across all br
   save('_seeded', true);
 })();
 
-// --- Theme --------------------------------------------------------------------
+// --- Theme
 const THEME_MODES = [
   { key:'light', name:'Light' },
   { key:'dark',  name:'Dark'  },
@@ -94,17 +97,14 @@ function applyTheme(){
 }
 applyTheme();
 
-// --- Cloud Sync (RTDB) --------------------------------------------------------
+// --- Cloud Sync (RTDB)
 const CLOUD_KEYS = ['inventory','products','posts','tasks','cogs','users','_theme2'];
 const cloud = (function(){
   let liveRefs = [];
   function uid(){ return auth.currentUser?.uid; }
   function on(){ return !!load('_cloudOn', false); }
   function setOn(v){ save('_cloudOn', !!v); }
-  function pathFor(key){
-    // /tenants/{uid}/kv/{key}
-    return db.ref(`tenants/${uid()}/kv/${key}`);
-  }
+  function pathFor(key){ return db.ref(`tenants/${uid()}/kv/${key}`); }
   async function saveKV(key, val){
     if (!on() || !uid()) return;
     await pathFor(key).set({ key, val, updatedAt: firebase.database.ServerValue.TIMESTAMP });
@@ -138,10 +138,7 @@ const cloud = (function(){
       liveRefs.push({ ref, handler });
     });
   }
-  function unsubscribeAll(){
-    liveRefs.forEach(({ref})=>{ try{ ref.off(); }catch{} });
-    liveRefs = [];
-  }
+  function unsubscribeAll(){ liveRefs.forEach(({ref})=>{ try{ ref.off(); }catch{} }); liveRefs = []; }
   async function pushAll(){
     if (!uid()) return;
     for (const k of CLOUD_KEYS){
@@ -158,16 +155,12 @@ const cloud = (function(){
     await pushAll();
     subscribeAll();
   }
-  function disable(){
-    setOn(false);
-    unsubscribeAll();
-  }
+  function disable(){ setOn(false); unsubscribeAll(); }
   return { isOn:on, enable, disable, saveKV, pullAllOnce, subscribeAll, pushAll };
 })();
 
-// --- Router & Idle ------------------------------------------------------------
+// --- Router & Idle
 function go(route){ currentRoute = route; save('_route', route); renderApp(); }
-
 let idleTimer = null;
 const IDLE_LIMIT = 10 * 60 * 1000;
 function resetIdleTimer(){
@@ -181,7 +174,7 @@ function resetIdleTimer(){
   window.addEventListener(evt, resetIdleTimer, { passive: true });
 });
 
-// --- Auth state ---------------------------------------------------------------
+// --- Auth state
 auth.onAuthStateChanged(async (user) => {
   applyTheme();
   if (user) {
@@ -211,8 +204,40 @@ auth.onAuthStateChanged(async (user) => {
   }
 });
 
-// Part 2 — Sidebar/topbar + global listeners + renderApp scaffold
-// --- Login / Logout -----------------------------------------------------------
+// --- Home video rotation helpers
+// Pool supports MP4 (safe) and YouTube (autoplay muted). Replace/add as you wish.
+const HOME_VIDEO_POOL = [
+  { kind:'mp4',
+    src:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+    poster:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.jpg',
+    title:'Intro: Inventory basics' },
+  { kind:'mp4',
+    src:'https://www.w3schools.com/html/mov_bbb.mp4',
+    poster:'https://peach.blender.org/wp-content/uploads/title_anouncement.jpg?x11217',
+    title:'Sample: Big Buck Bunny (CC)' },
+  // Optional YouTube examples (replace with your own IDs)
+  { kind:'yt', id:'6Dh-RL__uN4', title:'(YT) Chill beat' },
+  { kind:'yt', id:'fLexgOxsZu0', title:'(YT) Uptempo (muted autoplay)' }
+];
+// Mode: 'weekly' or 'everyLogin'
+function getHomeVideoMode(){ return load('_homeVideoMode','weekly'); }
+function pickHomeVideo(){
+  const mode = getHomeVideoMode();
+  const now = Date.now();
+  const rec = load('_homeVideoPick', { idx:0, at:0 });
+  const weekMs = 7*24*60*60*1000;
+  const shouldRotate = mode==='everyLogin' || (now - rec.at > weekMs);
+  let idx = rec.idx;
+  if (shouldRotate){
+    idx = Math.floor(Math.random()*HOME_VIDEO_POOL.length);
+    save('_homeVideoPick', { idx, at: now });
+  }
+  return HOME_VIDEO_POOL[idx] || HOME_VIDEO_POOL[0];
+}
+
+// public/js/app.js (2/6)
+// Login view (mobile-friendly), sidebar/topbar, renderApp & search hook
+// --- Login / Logout (mobile-friendly form)
 function renderLogin() {
   const root = $('#root');
   root.innerHTML = `
@@ -225,26 +250,45 @@ function renderLogin() {
           </div>
           <h2 style="text-align:center;margin:6px 0 2px">Inventory</h2>
           <p class="login-note">Sign in with your email and password.</p>
-          <div class="grid">
-            <input id="li-email" class="input" type="email" placeholder="Email" />
-            <input id="li-pass" class="input" type="password" placeholder="Password" />
-            <button id="btnLogin" class="btn">Sign In</button>
+
+          <form id="loginForm" class="grid" novalidate>
+            <input id="li-email" class="input" type="email" inputmode="email"
+                   autocomplete="username email" autocapitalize="none" spellcheck="false"
+                   placeholder="Email" required />
+            <input id="li-pass" class="input" type="password"
+                   autocomplete="current-password" placeholder="Password" required />
+            <button id="btnLogin" class="btn" type="submit">Sign In</button>
+          </form>
+
+          <div style="color:var(--muted);font-size:12px;margin-top:8px">
+            Tip: If sign-in fails on mobile, allow cookies/storage in your browser and ensure your Hosting domain is whitelisted in Firebase Auth → Authorized domains.
           </div>
         </div>
       </div>
     </div>
   `;
-  $('#btnLogin').onclick = async () => {
+
+  const form = $('#loginForm');
+  const btn  = $('#btnLogin');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
     const email = $('#li-email').value.trim();
     const pass  = $('#li-pass').value;
     if (!email || !pass) { notify('Enter email & password','warn'); return; }
-    try { await auth.signInWithEmailAndPassword(email, pass); notify('Welcome!'); }
-    catch (e) { notify(e.message || 'Login failed','danger'); }
-  };
+    try {
+      btn.disabled = true;
+      await auth.signInWithEmailAndPassword(email, pass);
+      notify('Welcome!');
+    } catch (err) {
+      notify(err?.message || 'Login failed','danger');
+    } finally {
+      btn.disabled = false;
+    }
+  }, { passive:false });
 }
 async function doLogout(){ cloud.disable(); await auth.signOut(); notify('Signed out'); }
 
-// --- Sidebar + Topbar ---------------------------------------------------------
+// --- Sidebar + Topbar
 function renderSidebar(active='home'){
   const links = [
     { route:'home',      icon:'ri-home-5-line',              label:'Home' },
@@ -317,8 +361,7 @@ function renderTopbar(){
   `;
 }
 
-// --- Global delegated listeners ----------------------------------------------
-// Sidebar route (works across re-renders)
+// Global route & close-modal listeners
 document.addEventListener('click', (e)=>{
   const item = e.target.closest('.sidebar .item[data-route]');
   if (!item) return;
@@ -326,7 +369,6 @@ document.addEventListener('click', (e)=>{
   if (r) go(r);
 }, { passive: true });
 
-// Close modals (works across re-renders)
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-close]');
   if (!btn) return;
@@ -334,7 +376,7 @@ document.addEventListener('click', (e) => {
   if (id) { closeModal(id); }
 }, { passive: true });
 
-// --- Render App ---------------------------------------------------------------
+// Render
 function renderApp(){
   if (!session) { renderLogin(); return; }
   const root = $('#root');
@@ -362,14 +404,14 @@ function renderApp(){
 
   hookSidebarInteractions();
 
-  // Burger / backdrop / home / logout
+  // Topbar interactions
   $('#burger')?.addEventListener('click', openSidebar, { passive:true });
   $('#backdrop')?.addEventListener('click', closeSidebar, { passive:true });
   $('#btnHome')?.addEventListener('click', ()=> go('home'));
   $('#btnLogout')?.addEventListener('click', doLogout);
 
-  // Robust tile click-through
-  document.querySelectorAll('.card.tile[data-go]').forEach(t => {
+  // Click-through tiles/cards
+  document.querySelectorAll('.card.tile[data-go], .card[data-go]').forEach(t => {
     t.style.cursor = 'pointer';
     t.onclick = () => { const r = t.getAttribute('data-go'); if (r) go(r); };
   });
@@ -384,22 +426,20 @@ function renderApp(){
   });
 
   // Wire sections
-if (currentRoute==='dashboard')  { wireDashboard?.(); wirePosts?.(); }  // <- add wirePosts here
-if (currentRoute==='inventory')  wireInventory?.();
-if (currentRoute==='products')   { wireProducts?.(); wireProductCardClicks?.(); } // <- add product card clicks
-if (currentRoute==='cogs')       wireCOGS?.();
-if (currentRoute==='tasks')      { wireTasks?.(); setupDnD?.(); }
-if (currentRoute==='settings')   { wireSettings?.(); wireUsers?.(); } // <- add wireUsers here
+  if (currentRoute==='dashboard')  wireDashboard?.();
+  if (currentRoute==='inventory')  wireInventory?.();
+  if (currentRoute==='products')   wireProducts?.();
+  if (currentRoute==='cogs')       wireCOGS?.();
+  if (currentRoute==='tasks')      { wireTasks?.(); setupDnD?.(); }
+  if (currentRoute==='settings')   wireSettings?.();
 
-  // Mobile image preview support
+  // Mobile image preview
   enableMobileImagePreview?.();
 }
-
 function openSidebar(){ $('#sidebar')?.classList.add('open'); $('#backdrop')?.classList.add('active'); }
 function closeSidebar(){ $('#sidebar')?.classList.remove('open'); $('#backdrop')?.classList.remove('active'); }
 
-// Part 3 — Home (with video) + Search + Dashboard
-// --- Search box in sidebar ----------------------------------------------------
+// Sidebar search
 function hookSidebarInteractions(){
   const input = $('#globalSearch');
   const results = $('#searchResults');
@@ -457,11 +497,58 @@ function hookSidebarInteractions(){
   });
 }
 
-// --- Views --------------------------------------------------------------------
+// public/js/app.js (3/6)
+// Home (video rotator), Search, Dashboard (adds YoY + Previous Month comparisons) + helpers
 const USD = x => `$${Number(x||0).toFixed(2)}`;
-const VIDEO_ID = 'ysz5S6PUM-U'; // sample public video
+
+// Date helpers for dashboard comparisons
+function parseYMD(d){
+  if (!d) return null;
+  const [y,m,day] = d.split('-').map(n=>parseInt(n,10));
+  if (!y || !m || !day) return null;
+  return new Date(y, m-1, day);
+}
+function sumGrossForMonthYear(rows, monthIndex0, year){
+  return rows.reduce((sum, r)=>{
+    const dt = parseYMD(r.date);
+    if (!dt) return sum;
+    return (dt.getFullYear()===year && dt.getMonth()===monthIndex0)
+      ? sum + Number(r.grossIncome||0)
+      : sum;
+  }, 0);
+}
+function monthYearBefore(date){
+  const y = date.getFullYear();
+  const m = date.getMonth();
+  if (m === 0) return { year: y-1, month0: 11 };
+  return { year: y, month0: m-1 };
+}
 
 function viewHome(){
+  const choice = pickHomeVideo();
+  const title  = choice.title || 'Intro';
+  const videoBlock = (choice.kind === 'mp4')
+    ? `
+      <video
+        style="width:100%;border-radius:12px;border:1px solid var(--card-border)"
+        controls autoplay muted playsinline
+        preload="metadata"
+        poster="${choice.poster || ''}">
+        <source src="${choice.src}" type="video/mp4" />
+        Your browser does not support HTML5 video.
+      </video>`
+    : `
+      <div style="position:relative;padding-top:56.25%;border-radius:12px;overflow:hidden;border:1px solid var(--card-border)">
+        <iframe
+          src="https://www.youtube.com/embed/${choice.id}?autoplay=1&mute=1&playsinline=1&rel=0"
+          title="${title}"
+          style="position:absolute;inset:0;width:100%;height:100%;border:0"
+          allow="autoplay; encrypted-media; picture-in-picture; web-share"
+          referrerpolicy="strict-origin-when-cross-origin"
+          allowfullscreen
+        ></iframe>
+      </div>`;
+
   return `
     <div class="card">
       <div class="card-body">
@@ -494,18 +581,10 @@ function viewHome(){
         <div class="grid">
           <div class="card">
             <div class="card-body">
-              <h4 style="margin:0 0 10px 0">What is Inventory?</h4>
-              <video
-                style="width:100%;border-radius:12px;border:1px solid var(--card-border)"
-                controls
-                playsinline
-                preload="metadata"
-                poster="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.jpg">
-                <source src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" type="video/mp4" />
-                Your browser does not support HTML5 video.
-              </video>
-              <div style="color:var(--muted);font-size:12px;margin-top:6px">
-                If the video doesn't play, <a href="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" target="_blank" rel="noopener">open it in a new tab</a>.
+              <h4 style="margin:0 0 10px 0">${title}</h4>
+              ${videoBlock}
+              <div style="color:var(--muted);font-size:12px;margin-top:8px">
+                Video mode: <strong>${getHomeVideoMode()}</strong>. (Change logic by updating <code>_homeVideoMode</code> in localStorage to "weekly" or "everyLogin".)
               </div>
             </div>
           </div>
@@ -547,13 +626,36 @@ function viewSearch(){
 
 function viewDashboard(){
   const posts = load('posts', []);
-  const inv = load('inventory', []);
+  const inv   = load('inventory', []);
   const prods = load('products', []);
   const users = load('users', []);
   const tasks = load('tasks', []);
+  const cogs  = load('cogs', []);
 
   const lowCt  = inv.filter(i => i.stock <= i.threshold && i.stock > Math.max(1, Math.floor(i.threshold*0.6))).length;
   const critCt = inv.filter(i => i.stock <= Math.max(1, Math.floor(i.threshold*0.6))).length;
+
+  // --- YoY same-month
+  const now = new Date();
+  const month0 = now.getMonth();      // 0..11
+  const year   = now.getFullYear();
+  const lastYear = year - 1;
+
+  const thisMonthTotal = sumGrossForMonthYear(cogs, month0, year);
+  const lastYearSameMonthTotal = sumGrossForMonthYear(cogs, month0, lastYear);
+
+  const monthName = now.toLocaleString(undefined, { month: 'long' });
+  const yoyDiff = thisMonthTotal - lastYearSameMonthTotal;
+  const yoyAhead = yoyDiff >= 0;
+  const yoyDiffText = (yoyAhead ? '+' : '−') + USD(Math.abs(yoyDiff)).slice(1);
+
+  // --- Previous-month (MoM) comparison
+  const pm = monthYearBefore(now);
+  const prevMonthTotal = sumGrossForMonthYear(cogs, pm.month0, pm.year);
+  const momDiff = thisMonthTotal - prevMonthTotal;
+  const momAhead = momDiff >= 0;
+  const momDiffText = (momAhead ? '+' : '−') + USD(Math.abs(momDiff)).slice(1);
+  const prevMonthName = new Date(pm.year, pm.month0, 1).toLocaleString(undefined, { month:'long', year:'numeric' });
 
   return `
     <div class="grid cols-4 auto">
@@ -564,14 +666,62 @@ function viewDashboard(){
     </div>
 
     <div class="grid cols-4 auto" style="margin-top:12px">
-      <div class="card" style="border-left:4px solid var(--warn)">
+      <div class="card" style="border-left:4px solid var(--warn);cursor:pointer" data-go="inventory">
         <div class="card-body"><strong>Low stock</strong><div style="color:var(--muted)">${lowCt}</div></div>
       </div>
-      <div class="card" style="border-left:4px solid var(--danger)">
+      <div class="card" style="border-left:4px solid var(--danger);cursor:pointer" data-go="inventory">
         <div class="card-body"><strong>Critical</strong><div style="color:var(--muted)">${critCt}</div></div>
       </div>
-      <div class="card tile" data-go="cogs"><div class="card-body"><strong>COGS</strong><div style="color:var(--muted)">View details</div></div></div>
-<div class="card tile" data-go="tasks"><div class="card-body"><strong>Tasks</strong><div style="color:var(--muted)">Manage lanes</div></div></div>
+      <div class="card" style="cursor:pointer" data-go="cogs">
+        <div class="card-body"><strong>COGS</strong><div style="color:var(--muted)">View details</div></div>
+      </div>
+      <div class="card" style="cursor:pointer" data-go="tasks">
+        <div class="card-body"><strong>Tasks</strong><div style="color:var(--muted)">Manage lanes</div></div>
+      </div>
+    </div>
+
+    <!-- YoY comparison -->
+    <div class="grid cols-3 auto" style="margin-top:12px">
+      <div class="card" style="border-left:4px solid var(--brand)">
+        <div class="card-body">
+          <div style="font-weight:700">${monthName} ${year} Gross</div>
+          <div style="font-size:22px;margin-top:4px">${USD(thisMonthTotal)}</div>
+        </div>
+      </div>
+      <div class="card" style="border-left:4px solid var(--warn); background: var(--thead)">
+        <div class="card-body">
+          <div style="font-weight:700">${monthName} ${lastYear} Gross (last year)</div>
+          <div style="font-size:22px;margin-top:4px">${USD(lastYearSameMonthTotal)}</div>
+        </div>
+      </div>
+      <div class="card" style="border-left:4px solid ${yoyAhead ? 'var(--ok)' : 'var(--danger)'}">
+        <div class="card-body">
+          <div style="font-weight:700">YoY Δ</div>
+          <div style="font-size:22px;margin-top:4px;color:${yoyAhead ? 'var(--ok)' : 'var(--danger)'}">${yoyDiffText}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MoM comparison -->
+    <div class="grid cols-3 auto" style="margin-top:12px">
+      <div class="card" style="border-left:4px solid var(--brand-2)">
+        <div class="card-body">
+          <div style="font-weight:700">${monthName} ${year} Gross</div>
+          <div style="font-size:22px;margin-top:4px">${USD(thisMonthTotal)}</div>
+        </div>
+      </div>
+      <div class="card" style="border-left:4px solid var(--muted); background: var(--thead)">
+        <div class="card-body">
+          <div style="font-weight:700">${prevMonthName} Gross (prev month)</div>
+          <div style="font-size:22px;margin-top:4px">${USD(prevMonthTotal)}</div>
+        </div>
+      </div>
+      <div class="card" style="border-left:4px solid ${momAhead ? 'var(--ok)' : 'var(--danger)'}">
+        <div class="card-body">
+          <div style="font-weight:700">MoM Δ</div>
+          <div style="font-size:22px;margin-top:4px;color:${momAhead ? 'var(--ok)' : 'var(--danger)'}">${momDiffText}</div>
+        </div>
+      </div>
     </div>
 
     <div class="card" style="margin-top:16px">
@@ -604,16 +754,11 @@ function viewDashboard(){
   `;
 }
 
+// Dashboard wire: Add Post + make sure Users tile navigates
 function wireDashboard(){
-  // 1) Make the "Add Post" button open the Post modal
-  //    (button is rendered in viewDashboard only for admins/managers)
   const addPostBtn = document.getElementById('addPost');
-  if (addPostBtn) {
-    addPostBtn.onclick = () => openModal('m-post');
-  }
+  if (addPostBtn) addPostBtn.onclick = () => openModal('m-post');
 
-  // 2) Ensure the "Users" tile navigates to Settings (Users table is there)
-  //    Some builds already wire .tile clicks globally, but this is a safe fallback.
   const usersTile = document.querySelector('.tile[data-go="settings"]');
   if (usersTile) {
     usersTile.style.cursor = 'pointer';
@@ -659,8 +804,8 @@ function wirePosts(){
   });
 }
 
-// Part 4 — Inventory, Products, COGS, Tasks (with empty-lane drop) + Settings + Static pages
-// Inventory
+// public/js/app.js (4/6)
+// Inventory, Products, COGS
 function viewInventory(){
   const items = load('inventory', []);
   return `
@@ -717,7 +862,73 @@ function viewInventory(){
   `;
 }
 
-// Products
+function wireInventory(){
+  if ($('#addInv')) $('#addInv').onclick = ()=> openModal('m-inv');
+  const sec = $('[data-section="inventory"]'); if (!sec) return;
+
+  $('#save-inv')?.addEventListener('click', ()=>{
+    const items = load('inventory', []);
+    const id = $('#inv-id').value || ('inv_'+Date.now());
+    const obj = {
+      id,
+      name: $('#inv-name').value.trim(),
+      code: $('#inv-code').value.trim(),
+      type: $('#inv-type').value.trim(),
+      price: parseFloat($('#inv-price').value||'0'),
+      stock: parseInt($('#inv-stock').value||'0'),
+      threshold: parseInt($('#inv-threshold').value||'0'),
+      img: $('#inv-img').value.trim(),
+    };
+    if (!obj.name) return notify('Name required','warn');
+    const i = items.findIndex(x=>x.id===id);
+    if (i>=0) items[i]=obj; else items.push(obj);
+    save('inventory', items); closeModal('m-inv'); notify('Saved'); renderApp();
+  });
+
+  sec.addEventListener('click', (e)=>{
+    const t = e.target;
+    const btn = t.closest('button'); if (!btn) return;
+
+    if (btn.hasAttribute('data-edit')) {
+      const id = btn.getAttribute('data-edit');
+      const items = load('inventory', []);
+      const it = items.find(x=>x.id===id); if (!it) return;
+      openModal('m-inv');
+      $('#inv-id').value=id; $('#inv-name').value=it.name; $('#inv-code').value=it.code;
+      $('#inv-type').value=it.type||'Other';
+      $('#inv-price').value=it.price; $('#inv-stock').value=it.stock;
+      $('#inv-threshold').value=it.threshold; $('#inv-img').value=it.img||'';
+      return;
+    }
+    if (btn.hasAttribute('data-del')) {
+      const id = btn.getAttribute('data-del');
+      let items = load('inventory', []).filter(x=>x.id!==id);
+      save('inventory', items); notify('Deleted'); renderApp();
+      return;
+    }
+    if (btn.hasAttribute('data-inc')) {
+      const id = btn.getAttribute('data-inc');
+      const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
+      it.stock++; save('inventory', items); renderApp(); return;
+    }
+    if (btn.hasAttribute('data-dec')) {
+      const id = btn.getAttribute('data-dec');
+      const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
+      it.stock=Math.max(0,it.stock-1); save('inventory', items); renderApp(); return;
+    }
+    if (btn.hasAttribute('data-inc-th')) {
+      const id = btn.getAttribute('data-inc-th');
+      const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
+      it.threshold++; save('inventory', items); renderApp(); return;
+    }
+    if (btn.hasAttribute('data-dec-th')) {
+      const id = btn.getAttribute('data-dec-th');
+      const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
+      it.threshold=Math.max(0,it.threshold-1); save('inventory', items); renderApp(); return;
+    }
+  });
+}
+
 function viewProducts(){
   const items = load('products', []);
   return `
@@ -763,7 +974,77 @@ function viewProducts(){
   `;
 }
 
-// COGS
+function wireProducts(){
+  if ($('#addProd')) $('#addProd').onclick = ()=> openModal('m-prod');
+  const sec = $('[data-section="products"]'); if (!sec) return;
+
+  $('#save-prod')?.addEventListener('click', ()=>{
+    const items = load('products', []);
+    const id = $('#prod-id').value || ('p_'+Date.now());
+    const obj = {
+      id,
+      name: $('#prod-name').value.trim(),
+      barcode: $('#prod-barcode').value.trim(),
+      price: parseFloat($('#prod-price').value||'0'),
+      type: $('#prod-type').value.trim(),
+      ingredients: $('#prod-ingredients').value.trim(),
+      instructions: $('#prod-instructions').value.trim(),
+      img: $('#prod-img').value.trim()
+    };
+    if (!obj.name) return notify('Name required','warn');
+    const i = items.findIndex(x=>x.id===id);
+    if (i>=0) items[i]=obj; else items.push(obj);
+    save('products', items); closeModal('m-prod'); notify('Saved'); renderApp();
+  });
+
+  sec.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if (!btn) return;
+    const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
+    if (btn.hasAttribute('data-edit')) {
+      const items = load('products', []); const it = items.find(x=>x.id===id); if (!it) return;
+      openModal('m-prod');
+      $('#prod-id').value=id; $('#prod-name').value=it.name; $('#prod-barcode').value=it.barcode;
+      $('#prod-price').value=it.price; $('#prod-type').value=it.type;
+      $('#prod-ingredients').value=it.ingredients; $('#prod-instructions').value=it.instructions; $('#prod-img').value=it.img||'';
+    } else {
+      let items = load('products', []).filter(x=>x.id!==id);
+      save('products', items); notify('Deleted'); renderApp();
+    }
+  });
+}
+
+// Product card preview
+function wireProductCardClicks(){
+  $$('.prod-thumb').forEach(el=>{
+    el.style.cursor = 'pointer';
+    el.onclick = ()=>{
+      const id = el.getAttribute('data-card');
+      const items = load('products', []);
+      const it = items.find(x=>x.id===id); if (!it) return;
+      $('#pc-name').textContent = it.name;
+      $('#pc-img').src = it.img || 'icons/icon-512.png';
+      $('#pc-barcode').textContent = it.barcode||'-';
+      $('#pc-price').textContent = USD(it.price);
+      $('#pc-type').textContent = it.type||'-';
+      $('#pc-ingredients').textContent = it.ingredients||'-';
+      $('#pc-instructions').textContent = it.instructions||'-';
+      openModal('m-card');
+    };
+  });
+}
+
+function enableMobileImagePreview(){
+  const isPhone = window.matchMedia('(max-width: 740px)').matches;
+  if (!isPhone) return;
+  $$('.inv-preview, .prod-preview').forEach(el=>{
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', ()=>{
+      const src = el.getAttribute('data-src') || 'icons/icon-512.png';
+      openImg(src);
+    });
+  });
+}
+
 function viewCOGS(){
   const rows = load('cogs', []);
   const totals = rows.reduce((a,r)=>({
@@ -828,7 +1109,48 @@ function viewCOGS(){
   `;
 }
 
-// Tasks (with empty-lane drop)
+function wireCOGS(){
+  if ($('#addCOGS')) $('#addCOGS').onclick = ()=> openModal('m-cogs');
+  const sec = $('[data-section="cogs"]'); if (!sec) return;
+
+  $('#save-cogs')?.addEventListener('click', ()=>{
+    const rows = load('cogs', []);
+    const id = $('#cogs-id').value || ('c_'+Date.now());
+    const row = {
+      id,
+      date: $('#cogs-date').value || new Date().toISOString().slice(0,10),
+      grossIncome: parseFloat($('#cogs-grossIncome').value||'0'),
+      produceCost: parseFloat($('#cogs-produceCost').value||'0'),
+      itemCost: parseFloat($('#cogs-itemCost').value||'0'),
+      freight: parseFloat($('#cogs-freight').value||'0'),
+      delivery: parseFloat($('#cogs-delivery').value||'0'),
+      other: parseFloat($('#cogs-other').value||'0'),
+    };
+    const i = rows.findIndex(x=>x.id===id);
+    if (i>=0) rows[i]=row; else rows.push(row);
+    save('cogs', rows); closeModal('m-cogs'); notify('Saved'); renderApp();
+  });
+
+  sec.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if (!btn) return;
+    const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
+    if (btn.hasAttribute('data-edit')) {
+      const rows = load('cogs', []); const r = rows.find(x=>x.id===id); if (!r) return;
+      openModal('m-cogs');
+      $('#cogs-id').value=id; $('#cogs-date').value=r.date;
+      $('#cogs-grossIncome').value=r.grossIncome; $('#cogs-produceCost').value=r.produceCost;
+      $('#cogs-itemCost').value=r.itemCost; $('#cogs-freight').value=r.freight;
+      $('#cogs-delivery').value=r.delivery; $('#cogs-other').value=r.other;
+    } else {
+      let rows = load('cogs', []).filter(x=>x.id!==id);
+      save('cogs', rows); notify('Deleted'); renderApp();
+    }
+  });
+}
+
+// public/js/app.js (5/6)
+// Tasks (free drag anywhere) + Settings + Static pages + Modals + utilities
+// Tasks (with empty-lane dropzones; free moves anywhere)
 function viewTasks(){
   const items = load('tasks', []);
   const lane = (key, label, color)=>`
@@ -866,7 +1188,84 @@ function viewTasks(){
   `;
 }
 
-// Settings
+function setupDnD(){
+  const lanes = ['todo','inprogress','done'];
+
+  // allow moves anywhere
+  const allow = { 'todo':new Set(lanes), 'inprogress':new Set(lanes), 'done':new Set(lanes) };
+
+  // card drag start
+  $$('[data-task]').forEach(card=>{
+    card.ondragstart = (e)=> { e.dataTransfer.setData('text/plain', card.getAttribute('data-task')); };
+  });
+
+  lanes.forEach(k=>{
+    const laneGrid = $('#lane-'+k);
+    const dropzone = document.querySelector(`.lane-dropzone[data-dropzone="${k}"]`);
+    const parentCard = laneGrid?.closest('.lane-row');
+
+    const over = (e)=>{
+      e.preventDefault();
+      const id = e.dataTransfer?.getData('text/plain');
+      if (!id) return parentCard?.classList.add('drop'); // still show drop
+      const items = load('tasks', []);
+      const t = items.find(x=>x.id===id); 
+      if (!t) return parentCard?.classList.add('drop');
+      if (allow[t.status].has(k)) parentCard?.classList.add('drop'); else parentCard?.classList.remove('drop');
+    };
+    const leave = ()=> parentCard?.classList.remove('drop');
+    const drop = (e)=>{
+      e.preventDefault();
+      parentCard?.classList.remove('drop');
+      const id = e.dataTransfer.getData('text/plain');
+      const items = load('tasks', []);
+      const t = items.find(x=>x.id===id); if (!t) return;
+      // Free move anywhere
+      t.status = k; save('tasks', items); renderApp();
+    };
+
+    if (laneGrid){
+      laneGrid.ondragover = over;
+      laneGrid.ondragenter = (e)=> e.preventDefault();
+      laneGrid.ondragleave = leave;
+      laneGrid.ondrop = drop;
+    }
+    if (dropzone){
+      dropzone.ondragover = over;
+      dropzone.ondragenter = (e)=> e.preventDefault();
+      dropzone.ondragleave = leave;
+      dropzone.ondrop = drop;
+    }
+  });
+}
+
+function wireTasks(){
+  const root = $('[data-section="tasks"]'); if (!root) return;
+  if ($('#addTask')) $('#addTask').onclick = ()=> openModal('m-task');
+
+  $('#save-task')?.addEventListener('click', ()=>{
+    const items = load('tasks', []);
+    const id = $('#task-id').value || ('t_'+Date.now());
+    const obj = { id, title: $('#task-title').value.trim(), status: $('#task-status').value };
+    const i = items.findIndex(x=>x.id===id);
+    if (i>=0) items[i]=obj; else items.push(obj);
+    save('tasks',items); closeModal('m-task'); notify('Saved'); renderApp();
+  });
+
+  root.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button'); if (!btn) return;
+    const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
+    if (btn.hasAttribute('data-edit')) {
+      const items = load('tasks', []); const t = items.find(x=>x.id===id); if (!t) return;
+      openModal('m-task'); $('#task-id').value = t.id; $('#task-title').value = t.title; $('#task-status').value = t.status;
+    } else {
+      let items = load('tasks', []).filter(x=>x.id!==id);
+      save('tasks', items); notify('Deleted'); renderApp();
+    }
+  });
+}
+
+// Settings (instant theme + cloud controls)
 function viewSettings(){
   const users = load('users', []);
   const theme = getTheme();
@@ -945,7 +1344,60 @@ function viewSettings(){
   `;
 }
 
-// Static pages + Contact form (iframes to standalone pages)
+function wireSettings(){
+  // Theme instant-apply
+  const mode = $('#theme-mode'); const size = $('#theme-size');
+  if (mode && size){
+    const apply = ()=>{
+      const t = { mode: mode.value, size: size.value };
+      save('_theme2', t); applyTheme(); renderApp();
+    };
+    mode.onchange = apply;
+    size.onchange = apply;
+  }
+
+  // Cloud controls
+  const toggle = $('#cloud-toggle');
+  const syncNow = $('#cloud-sync-now');
+
+  if (toggle){
+    toggle.addEventListener('change', async (e)=>{
+      const val = e.target.value;
+      try {
+        if (val === 'on'){
+          if (!auth.currentUser){ notify('Sign in first.','warn'); toggle.value='off'; return; }
+          await firebase.database().goOnline();
+          await cloud.enable();
+          notify('Cloud Sync ON');
+        } else {
+          cloud.disable();
+          await firebase.database().goOffline();
+          notify('Cloud Sync OFF');
+        }
+      } catch(err){
+        notify(err?.message || 'Could not change sync','danger');
+        toggle.value = cloud.isOn() ? 'on' : 'off';
+      }
+    });
+  }
+
+  if (syncNow){
+    syncNow.addEventListener('click', async ()=>{
+      try{
+        if (!auth.currentUser){ notify('Sign in first.','warn'); return; }
+        if (!cloud.isOn()){ notify('Turn Cloud Sync ON first in Settings.','warn'); return; }
+        if (!navigator.onLine){ notify('You appear to be offline. Check your connection.','warn'); return; }
+        await firebase.database().goOnline();
+        await cloud.pushAll();
+        notify('Synced');
+      }catch(e){
+        notify((e && e.message) || 'Sync failed','danger');
+      }
+    });
+  }
+}
+
+// Static pages (iframes to standalone pages) + Contact page (inline)
 const pageContent = {
   policy: `<h3>Policy</h3>
     <div style="border:1px solid var(--card-border);border-radius:12px;overflow:hidden">
@@ -979,15 +1431,12 @@ const pageContent = {
 };
 function viewPage(key){ return `<div class="card"><div class="card-body">${pageContent[key]||'<p>Page</p>'}</div></div>`; }
 
-// --- Permission helpers -------------------------------------------------------
+// Permissions
 function canManage(){ return session && (session.role==='admin' || session.role==='manager'); }
 function canCreate(){ return session && (session.role==='admin' || session.role==='manager'); }
 
-// Part 5 — Modals + wiring (inventory/products/cogs/tasks/users) + Settings wiring + DnD + image preview
-// --- Modals -------------------------------------------------------------------
-function postModal(){
-  if (!canCreate()) return '';
-  return `
+// Modals (unchanged from your latest working version)
+function postModal(){ if (!canCreate()) return ''; return `
   <div class="modal-backdrop" id="mb-post"></div>
   <div class="modal" id="m-post">
     <div class="dialog">
@@ -1000,11 +1449,8 @@ function postModal(){
       </div>
       <div class="foot"><button class="btn" id="save-post">Save</button></div>
     </div>
-  </div>`;
-}
-function invModal(){
-  if (!canCreate()) return '';
-  return `
+  </div>`; }
+function invModal(){ if (!canCreate()) return ''; return `
   <div class="modal-backdrop" id="mb-inv"></div>
   <div class="modal" id="m-inv">
     <div class="dialog">
@@ -1023,11 +1469,8 @@ function invModal(){
       </div>
       <div class="foot"><button class="btn" id="save-inv">Save</button></div>
     </div>
-  </div>`;
-}
-function prodModal(){
-  if (!canCreate()) return '';
-  return `
+  </div>`; }
+function prodModal(){ if (!canCreate()) return ''; return `
   <div class="modal-backdrop" id="mb-prod"></div>
   <div class="modal" id="m-prod">
     <div class="dialog">
@@ -1044,10 +1487,8 @@ function prodModal(){
       </div>
       <div class="foot"><button class="btn" id="save-prod">Save</button></div>
     </div>
-  </div>`;
-}
-function prodCardModal(){
-  return `
+  </div>`; }
+function prodCardModal(){ return `
   <div class="modal-backdrop" id="mb-card"></div>
   <div class="modal" id="m-card">
     <div class="dialog">
@@ -1063,11 +1504,8 @@ function prodCardModal(){
         </div>
       </div>
     </div>
-  </div>`;
-}
-function cogsModal(){
-  if (!canCreate()) return '';
-  return `
+  </div>`; }
+function cogsModal(){ if (!canCreate()) return ''; return `
   <div class="modal-backdrop" id="mb-cogs"></div>
   <div class="modal" id="m-cogs">
     <div class="dialog">
@@ -1084,11 +1522,8 @@ function cogsModal(){
       </div>
       <div class="foot"><button class="btn" id="save-cogs">Save</button></div>
     </div>
-  </div>`;
-}
-function taskModal(){
-  if (!canCreate()) return '';
-  return `
+  </div>`; }
+function taskModal(){ if (!canCreate()) return ''; return `
   <div class="modal-backdrop" id="mb-task"></div>
   <div class="modal" id="m-task">
     <div class="dialog">
@@ -1104,11 +1539,8 @@ function taskModal(){
       </div>
       <div class="foot"><button class="btn" id="save-task">Save</button></div>
     </div>
-  </div>`;
-}
-function userModal(){
-  if (!canManage()) return '';
-  return `
+  </div>`; }
+function userModal(){ if (!canManage()) return ''; return `
   <div class="modal-backdrop" id="mb-user"></div>
   <div class="modal" id="m-user">
     <div class="dialog">
@@ -1126,10 +1558,9 @@ function userModal(){
       </div>
       <div class="foot"><button class="btn" id="save-user">Save</button></div>
     </div>
-  </div>`;
-}
+  </div>`; }
 
-// Image preview modal (phones)
+// Image preview modal helpers
 function imgPreviewModal(){
   return `
   <div class="modal-backdrop" id="mb-img"></div>
@@ -1150,287 +1581,8 @@ function openImg(src){
 function openModal(id){ $('#'+id)?.classList.add('active'); $('#mb-'+id.split('-')[1])?.classList.add('active'); }
 function closeModal(id){ $('#'+id)?.classList.remove('active'); $('#mb-'+id.split('-')[1])?.classList.remove('active'); }
 
-// --- Wiring sections ----------------------------------------------------------
-// Inventory
-function wireInventory(){
-  if ($('#addInv')) $('#addInv').onclick = ()=> openModal('m-inv');
-  const sec = $('[data-section="inventory"]'); if (!sec) return;
-
-  $('#save-inv')?.addEventListener('click', ()=>{
-    const items = load('inventory', []);
-    const id = $('#inv-id').value || ('inv_'+Date.now());
-    const obj = {
-      id,
-      name: $('#inv-name').value.trim(),
-      code: $('#inv-code').value.trim(),
-      type: $('#inv-type').value.trim(),
-      price: parseFloat($('#inv-price').value||'0'),
-      stock: parseInt($('#inv-stock').value||'0'),
-      threshold: parseInt($('#inv-threshold').value||'0'),
-      img: $('#inv-img').value.trim(),
-    };
-    if (!obj.name) return notify('Name required','warn');
-    const i = items.findIndex(x=>x.id===id);
-    if (i>=0) items[i]=obj; else items.push(obj);
-    save('inventory', items); closeModal('m-inv'); notify('Saved'); renderApp();
-  });
-
-  sec.addEventListener('click', (e)=>{
-    const t = e.target;
-    const btn = t.closest('button');
-    if (!btn) return;
-
-    if (btn.hasAttribute('data-edit')) {
-      const id = btn.getAttribute('data-edit');
-      const items = load('inventory', []);
-      const it = items.find(x=>x.id===id); if (!it) return;
-      openModal('m-inv');
-      $('#inv-id').value=id; $('#inv-name').value=it.name; $('#inv-code').value=it.code;
-      $('#inv-type').value=it.type||'Other';
-      $('#inv-price').value=it.price; $('#inv-stock').value=it.stock;
-      $('#inv-threshold').value=it.threshold; $('#inv-img').value=it.img||'';
-      return;
-    }
-    if (btn.hasAttribute('data-del')) {
-      const id = btn.getAttribute('data-del');
-      let items = load('inventory', []).filter(x=>x.id!==id);
-      save('inventory', items); notify('Deleted'); renderApp();
-      return;
-    }
-    if (btn.hasAttribute('data-inc')) {
-      const id = btn.getAttribute('data-inc');
-      const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
-      it.stock++; save('inventory', items); renderApp(); return;
-    }
-    if (btn.hasAttribute('data-dec')) {
-      const id = btn.getAttribute('data-dec');
-      const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
-      it.stock=Math.max(0,it.stock-1); save('inventory', items); renderApp(); return;
-    }
-    if (btn.hasAttribute('data-inc-th')) {
-      const id = btn.getAttribute('data-inc-th');
-      const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
-      it.threshold++; save('inventory', items); renderApp(); return;
-    }
-    if (btn.hasAttribute('data-dec-th')) {
-      const id = btn.getAttribute('data-dec-th');
-      const items = load('inventory', []); const it = items.find(x=>x.id===id); if (!it) return;
-      it.threshold=Math.max(0,it.threshold-1); save('inventory', items); renderApp(); return;
-    }
-  });
-}
-
-// Products
-function wireProducts(){
-  if ($('#addProd')) $('#addProd').onclick = ()=> openModal('m-prod');
-  const sec = $('[data-section="products"]'); if (!sec) return;
-
-  $('#save-prod')?.addEventListener('click', ()=>{
-    const items = load('products', []);
-    const id = $('#prod-id').value || ('p_'+Date.now());
-    const obj = {
-      id,
-      name: $('#prod-name').value.trim(),
-      barcode: $('#prod-barcode').value.trim(),
-      price: parseFloat($('#prod-price').value||'0'),
-      type: $('#prod-type').value.trim(),
-      ingredients: $('#prod-ingredients').value.trim(),
-      instructions: $('#prod-instructions').value.trim(),
-      img: $('#prod-img').value.trim()
-    };
-    if (!obj.name) return notify('Name required','warn');
-    const i = items.findIndex(x=>x.id===id);
-    if (i>=0) items[i]=obj; else items.push(obj);
-    save('products', items); closeModal('m-prod'); notify('Saved'); renderApp();
-  });
-
-  sec.addEventListener('click', (e)=>{
-    const btn = e.target.closest('button'); if (!btn) return;
-    const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
-    if (btn.hasAttribute('data-edit')) {
-      const items = load('products', []); const it = items.find(x=>x.id===id); if (!it) return;
-      openModal('m-prod');
-      $('#prod-id').value=id; $('#prod-name').value=it.name; $('#prod-barcode').value=it.barcode;
-      $('#prod-price').value=it.price; $('#prod-type').value=it.type;
-      $('#prod-ingredients').value=it.ingredients; $('#prod-instructions').value=it.instructions; $('#prod-img').value=it.img||'';
-    } else {
-      let items = load('products', []).filter(x=>x.id!==id);
-      save('products', items); notify('Deleted'); renderApp();
-    }
-  });
-}
-
-// Product card clicks -> preview modal
-function wireProductCardClicks(){
-  $$('.prod-thumb').forEach(el=>{
-    el.style.cursor = 'pointer';
-    el.onclick = ()=>{
-      const id = el.getAttribute('data-card');
-      const items = load('products', []);
-      const it = items.find(x=>x.id===id); if (!it) return;
-      $('#pc-name').textContent = it.name;
-      $('#pc-img').src = it.img || 'icons/icon-512.png';
-      $('#pc-barcode').textContent = it.barcode||'-';
-      $('#pc-price').textContent = USD(it.price);
-      $('#pc-type').textContent = it.type||'-';
-      $('#pc-ingredients').textContent = it.ingredients||'-';
-      $('#pc-instructions').textContent = it.instructions||'-';
-      openModal('m-card');
-    };
-  });
-}
-
-// Phone tap-to-enlarge
-function enableMobileImagePreview(){
-  const isPhone = window.matchMedia('(max-width: 740px)').matches;
-  if (!isPhone) return;
-  $$('.inv-preview, .prod-preview').forEach(el=>{
-    el.style.cursor = 'pointer';
-    el.addEventListener('click', ()=>{
-      const src = el.getAttribute('data-src') || 'icons/icon-512.png';
-      openImg(src);
-    });
-  });
-}
-
-// COGS
-function wireCOGS(){
-  if ($('#addCOGS')) $('#addCOGS').onclick = ()=> openModal('m-cogs');
-  const sec = $('[data-section="cogs"]'); if (!sec) return;
-
-  $('#save-cogs')?.addEventListener('click', ()=>{
-    const rows = load('cogs', []);
-    const id = $('#cogs-id').value || ('c_'+Date.now());
-    const row = {
-      id,
-      date: $('#cogs-date').value || new Date().toISOString().slice(0,10),
-      grossIncome: parseFloat($('#cogs-grossIncome').value||'0'),
-      produceCost: parseFloat($('#cogs-produceCost').value||'0'),
-      itemCost: parseFloat($('#cogs-itemCost').value||'0'),
-      freight: parseFloat($('#cogs-freight').value||'0'),
-      delivery: parseFloat($('#cogs-delivery').value||'0'),
-      other: parseFloat($('#cogs-other').value||'0'),
-    };
-    const i = rows.findIndex(x=>x.id===id);
-    if (i>=0) rows[i]=row; else rows.push(row);
-    save('cogs', rows); closeModal('m-cogs'); notify('Saved'); renderApp();
-  });
-
-  sec.addEventListener('click', (e)=>{
-    const btn = e.target.closest('button'); if (!btn) return;
-    const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
-    if (btn.hasAttribute('data-edit')) {
-      const rows = load('cogs', []); const r = rows.find(x=>x.id===id); if (!r) return;
-      openModal('m-cogs');
-      $('#cogs-id').value=id; $('#cogs-date').value=r.date;
-      $('#cogs-grossIncome').value=r.grossIncome; $('#cogs-produceCost').value=r.produceCost;
-      $('#cogs-itemCost').value=r.itemCost; $('#cogs-freight').value=r.freight;
-      $('#cogs-delivery').value=r.delivery; $('#cogs-other').value=r.other;
-    } else {
-      let rows = load('cogs', []).filter(x=>x.id!==id);
-      save('cogs', rows); notify('Deleted'); renderApp();
-    }
-  });
-}
-
-// Tasks DnD + wiring
-// Tasks DnD — free move anywhere, even into empty lanes
-// Tasks DnD — unrestricted moves, works even if target lane is empty
-function setupDnD(){
-  let dragId = null;
-
-  // Make every task card draggable; make buttons inside non-draggable
-  document.querySelectorAll('.task-card[data-task]').forEach(card => {
-    card.setAttribute('draggable', 'true');
-
-    // prevent action buttons from breaking drag
-    card.querySelectorAll('button').forEach(btn => {
-      btn.setAttribute('draggable', 'false');
-      btn.addEventListener('mousedown', e => e.stopPropagation(), {passive:true});
-      btn.addEventListener('touchstart', e => e.stopPropagation(), {passive:true});
-    });
-
-    card.addEventListener('dragstart', (e) => {
-      dragId = card.getAttribute('data-task');
-      try {
-        e.dataTransfer.setData('text/plain', dragId);
-        e.dataTransfer.effectAllowed = 'move';
-      } catch(_) {}
-    });
-
-    card.addEventListener('dragend', () => {
-      dragId = null;
-      document.querySelectorAll('.lane-row.drop').forEach(el => el.classList.remove('drop'));
-    });
-  });
-
-  const lanes = ['todo','inprogress','done'];
-
-  const wireTarget = (el, laneKey, parentCard) => {
-    if (!el) return;
-    el.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      parentCard && parentCard.classList.add('drop');
-      try { e.dataTransfer.dropEffect = 'move'; } catch(_) {}
-    });
-    el.addEventListener('dragenter', (e) => { e.preventDefault(); });
-    el.addEventListener('dragleave', () => { parentCard && parentCard.classList.remove('drop'); });
-    el.addEventListener('drop', (e) => {
-      e.preventDefault();
-      parentCard && parentCard.classList.remove('drop');
-
-      const id = dragId || (e.dataTransfer && e.dataTransfer.getData('text/plain')) || '';
-      if (!id) return;
-
-      const items = load('tasks', []);
-      const t = items.find(x => x.id === id);
-      if (!t) return;
-
-      // free move anywhere
-      t.status = laneKey;
-      save('tasks', items);
-      renderApp();
-    });
-  };
-
-  lanes.forEach(k => {
-    const laneGrid  = document.getElementById(`lane-${k}`);
-    const dropzone  = document.querySelector(`.lane-dropzone[data-dropzone="${k}"]`);
-    const laneRow   = laneGrid ? laneGrid.closest('.lane-row') : null;
-
-    // Accept drops on all three: the visible dropzone, the grid area, and the whole lane card
-    wireTarget(dropzone, k, laneRow);
-    wireTarget(laneGrid,  k, laneRow);
-    wireTarget(laneRow,   k, laneRow);
-  });
-}
-
-function wireTasks(){
-  const root = $('[data-section="tasks"]'); if (!root) return;
-  if ($('#addTask')) $('#addTask').onclick = ()=> openModal('m-task');
-
-  $('#save-task')?.addEventListener('click', ()=>{
-    const items = load('tasks', []);
-    const id = $('#task-id').value || ('t_'+Date.now());
-    const obj = { id, title: $('#task-title').value.trim(), status: $('#task-status').value };
-    const i = items.findIndex(x=>x.id===id);
-    if (i>=0) items[i]=obj; else items.push(obj);
-    save('tasks',items); closeModal('m-task'); notify('Saved'); renderApp();
-  });
-
-  root.addEventListener('click', (e)=>{
-    const btn = e.target.closest('button'); if (!btn) return;
-    const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
-    if (btn.hasAttribute('data-edit')) {
-      const items = load('tasks', []); const t = items.find(x=>x.id===id); if (!t) return;
-      openModal('m-task'); $('#task-id').value = t.id; $('#task-title').value = t.title; $('#task-status').value = t.status;
-    } else {
-      let items = load('tasks', []).filter(x=>x.id!==id);
-      save('tasks', items); notify('Deleted'); renderApp();
-    }
-  });
-}
-
+// public/js/app.js (6/6)
+// Users + Search index + boot
 // Users
 function wireUsers(){
   if (!canManage()) return;
@@ -1470,64 +1622,7 @@ function wireUsers(){
   });
 }
 
-// Settings wiring (instant theme + cloud controls)
-function wireSettings(){
-  // Theme instant-apply
-  const mode = $('#theme-mode'); const size = $('#theme-size');
-  if (mode && size){
-    const apply = ()=>{
-      const t = { mode: mode.value, size: size.value };
-      save('_theme2', t); applyTheme();
-      // no full re-render needed, but do it so cards/panels recolor instantly
-      renderApp();
-    };
-    mode.onchange = apply;
-    size.onchange = apply;
-  }
-
-  // Cloud controls
-  const toggle = $('#cloud-toggle');
-  const syncNow = $('#cloud-sync-now');
-
-  if (toggle){
-    toggle.addEventListener('change', async (e)=>{
-      const val = e.target.value;
-      try {
-        if (val === 'on'){
-          if (!auth.currentUser){ notify('Sign in first.','warn'); toggle.value='off'; return; }
-          await firebase.database().goOnline();
-          await cloud.enable();
-          notify('Cloud Sync ON');
-        } else {
-          cloud.disable();
-          await firebase.database().goOffline();
-          notify('Cloud Sync OFF');
-        }
-      } catch(err){
-        notify(err?.message || 'Could not change sync','danger');
-        toggle.value = cloud.isOn() ? 'on' : 'off';
-      }
-    });
-  }
-
-  if (syncNow){
-    syncNow.addEventListener('click', async ()=>{
-      try{
-        if (!auth.currentUser){ notify('Sign in first.','warn'); return; }
-        if (!cloud.isOn()){ notify('Turn Cloud Sync ON first in Settings.','warn'); return; }
-        if (!navigator.onLine){ notify('You appear to be offline. Check your connection.','warn'); return; }
-        await firebase.database().goOnline(); // ensure client is online
-        await cloud.pushAll();
-        notify('Synced');
-      }catch(e){
-        notify((e && e.message) || 'Sync failed','danger');
-      }
-    });
-  }
-}
-
-// Part 6 — Search index + utilities + boot
-// --- Search helpers & jump ----------------------------------------------------
+// Search index
 function buildSearchIndex(){
   const posts = load('posts', []);
   const inv   = load('inventory', []);
@@ -1569,9 +1664,9 @@ function scrollToRow(id){
   if (el) el.scrollIntoView({ behavior:'smooth', block:'center' });
 }
 
-// Initial render (if session already in localStorage, e.g., after refresh)
+// Boot
 if (session) renderApp();
 if (!session) renderLogin();
 
 // Expose for console debugging
-window._inventory = { go, load, save, cloud };
+window._inventory = { go, load, save, cloud, pickHomeVideo };
