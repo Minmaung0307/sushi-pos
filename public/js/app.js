@@ -1335,18 +1335,27 @@ function wireCOGS(){
 
 // Tasks DnD + wiring
 // Tasks DnD — free move anywhere, even into empty lanes
+// Tasks DnD — unrestricted moves, works even if target lane is empty
 function setupDnD(){
-  // global-ish stash for the id of the card being dragged
   let dragId = null;
 
-  // Make every task card draggable
+  // Make every task card draggable; make buttons inside non-draggable
   document.querySelectorAll('.task-card[data-task]').forEach(card => {
+    card.setAttribute('draggable', 'true');
+
+    // prevent action buttons from breaking drag
+    card.querySelectorAll('button').forEach(btn => {
+      btn.setAttribute('draggable', 'false');
+      btn.addEventListener('mousedown', e => e.stopPropagation(), {passive:true});
+      btn.addEventListener('touchstart', e => e.stopPropagation(), {passive:true});
+    });
+
     card.addEventListener('dragstart', (e) => {
       dragId = card.getAttribute('data-task');
       try {
         e.dataTransfer.setData('text/plain', dragId);
         e.dataTransfer.effectAllowed = 'move';
-      } catch (_) {}
+      } catch(_) {}
     });
 
     card.addEventListener('dragend', () => {
@@ -1355,57 +1364,44 @@ function setupDnD(){
     });
   });
 
-  const lanes = ['todo', 'inprogress', 'done'];
+  const lanes = ['todo','inprogress','done'];
 
-  lanes.forEach(k => {
-    const laneGrid = document.getElementById(`lane-${k}`);
-    const dropzone = document.querySelector(`.lane-dropzone[data-dropzone="${k}"]`);
-    const parentCard = laneGrid ? laneGrid.closest('.lane-row') : null;
-
-    const onDragOver = (e) => {
-      // Allow dropping
+  const wireTarget = (el, laneKey, parentCard) => {
+    if (!el) return;
+    el.addEventListener('dragover', (e) => {
       e.preventDefault();
-      if (parentCard) parentCard.classList.add('drop');
+      parentCard && parentCard.classList.add('drop');
       try { e.dataTransfer.dropEffect = 'move'; } catch(_) {}
-    };
-
-    const onDragLeave = () => {
-      if (parentCard) parentCard.classList.remove('drop');
-    };
-
-    const onDrop = (e) => {
+    });
+    el.addEventListener('dragenter', (e) => { e.preventDefault(); });
+    el.addEventListener('dragleave', () => { parentCard && parentCard.classList.remove('drop'); });
+    el.addEventListener('drop', (e) => {
       e.preventDefault();
-      if (parentCard) parentCard.classList.remove('drop');
+      parentCard && parentCard.classList.remove('drop');
 
-      // Get the dragged id (from stash or transfer)
       const id = dragId || (e.dataTransfer && e.dataTransfer.getData('text/plain')) || '';
       if (!id) return;
 
-      // Move it — no restrictions, free anywhere
       const items = load('tasks', []);
       const t = items.find(x => x.id === id);
       if (!t) return;
 
-      t.status = k;
+      // free move anywhere
+      t.status = laneKey;
       save('tasks', items);
-      renderApp(); // will re-render lanes with the new card position
-    };
+      renderApp();
+    });
+  };
 
-    // Attach to the whole lane (so you can drop anywhere in that column)
-    if (laneGrid) {
-      laneGrid.addEventListener('dragover', onDragOver);
-      laneGrid.addEventListener('dragenter', (e) => e.preventDefault());
-      laneGrid.addEventListener('dragleave', onDragLeave);
-      laneGrid.addEventListener('drop', onDrop);
-    }
+  lanes.forEach(k => {
+    const laneGrid  = document.getElementById(`lane-${k}`);
+    const dropzone  = document.querySelector(`.lane-dropzone[data-dropzone="${k}"]`);
+    const laneRow   = laneGrid ? laneGrid.closest('.lane-row') : null;
 
-    // And also attach to the always-present dropzone
-    if (dropzone) {
-      dropzone.addEventListener('dragover', onDragOver);
-      dropzone.addEventListener('dragenter', (e) => e.preventDefault());
-      dropzone.addEventListener('dragleave', onDragLeave);
-      dropzone.addEventListener('drop', onDrop);
-    }
+    // Accept drops on all three: the visible dropzone, the grid area, and the whole lane card
+    wireTarget(dropzone, k, laneRow);
+    wireTarget(laneGrid,  k, laneRow);
+    wireTarget(laneRow,   k, laneRow);
   });
 }
 
