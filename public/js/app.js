@@ -39,6 +39,7 @@ const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com'];
 let session = load('session', null);
 let currentRoute = load('_route', 'home');
 let searchQuery  = load('_searchQ', '');
+let DRAG_ID = null;   // current dragged task id (for reliable DnD across all browsers)
 
 // One-time seed (local)
 (function seedOnFirstRun(){
@@ -569,8 +570,8 @@ function viewDashboard(){
       <div class="card" style="border-left:4px solid var(--danger)">
         <div class="card-body"><strong>Critical</strong><div style="color:var(--muted)">${critCt}</div></div>
       </div>
-      <div class="card" data-go="cogs"><div class="card-body"><strong>COGS</strong><div style="color:var(--muted)">View details</div></div></div>
-      <div class="card" data-go="tasks"><div class="card-body"><strong>Tasks</strong><div style="color:var(--muted)">Manage lanes</div></div></div>
+      <div class="card tile" data-go="cogs"><div class="card-body"><strong>COGS</strong><div style="color:var(--muted)">View details</div></div></div>
+<div class="card tile" data-go="tasks"><div class="card-body"><strong>Tasks</strong><div style="color:var(--muted)">Manage lanes</div></div></div>
     </div>
 
     <div class="card" style="margin-top:16px">
@@ -1341,51 +1342,63 @@ function setupDnD(){
     'done':       new Set(['todo','inprogress'])
   };
 
-  // card drag start
+  // 1) Make each task draggable and remember the dragged id globally
   $$('[data-task]').forEach(card=>{
     card.ondragstart = (e)=> {
-      e.dataTransfer.setData('text/plain', card.getAttribute('data-task'));
+      DRAG_ID = card.getAttribute('data-task');
+      try {
+        e.dataTransfer.setData('text/plain', DRAG_ID);
+        e.dataTransfer.effectAllowed = 'move';
+      } catch (_) {}
+    };
+    card.ondragend = ()=>{
+      DRAG_ID = null;
+      document.querySelectorAll('.lane-row.drop').forEach(el=> el.classList.remove('drop'));
     };
   });
 
-  // dropzones & lane containers accept drops even when empty
+  // 2) Lanes (and their always-present dropzones) accept drops even when empty
   lanes.forEach(k=>{
-    const laneGrid = $('#lane-'+k);
-    const dropzone = document.querySelector(`.lane-dropzone[data-dropzone="${k}"]`);
-    const parentCard = laneGrid?.closest('.lane-row');
+    const laneGrid  = $('#lane-'+k);
+    const dropzone  = document.querySelector(`.lane-dropzone[data-dropzone="${k}"]`);
+    const parentRow = laneGrid?.closest('.lane-row');
 
-    const over = (e)=>{
-      e.preventDefault();
-      const id = e.dataTransfer?.getData('text/plain');
-      if (!id) return parentCard?.classList.remove('drop');
+    const onOver = (e)=>{
+      e.preventDefault(); // required to allow dropping
+      if (!DRAG_ID){ parentRow?.classList.remove('drop'); return; }
       const items = load('tasks', []);
-      const t = items.find(x=>x.id===id); if (!t) return parentCard?.classList.remove('drop');
-      if (allow[t.status].has(k)) parentCard?.classList.add('drop'); else parentCard?.classList.remove('drop');
+      const t = items.find(x=>x.id===DRAG_ID);
+      if (t && allow[t.status].has(k)) parentRow?.classList.add('drop'); else parentRow?.classList.remove('drop');
     };
-    const leave = ()=> parentCard?.classList.remove('drop');
-    const drop = (e)=>{
+    const onLeave = ()=> parentRow?.classList.remove('drop');
+    const onDrop = (e)=>{
       e.preventDefault();
-      parentCard?.classList.remove('drop');
-      const id = e.dataTransfer.getData('text/plain');
+      parentRow?.classList.remove('drop');
+      if (!DRAG_ID) return;
+
       const items = load('tasks', []);
-      const t = items.find(x=>x.id===id); if (!t) return;
+      const t = items.find(x=>x.id===DRAG_ID); if (!t) return;
+
       if (!allow[t.status].has(k)) { notify('Move not allowed','warn'); return; }
-      t.status = k; save('tasks', items); renderApp();
+      t.status = k;
+      save('tasks', items);
+      DRAG_ID = null;
+      renderApp();
     };
 
     // lane container
     if (laneGrid){
-      laneGrid.ondragover = over;
+      laneGrid.ondragover  = onOver;
       laneGrid.ondragenter = (e)=> e.preventDefault();
-      laneGrid.ondragleave = leave;
-      laneGrid.ondrop = drop;
+      laneGrid.ondragleave = onLeave;
+      laneGrid.ondrop      = onDrop;
     }
-    // always-present dropzone
+    // always-present dropzone (works when lane is empty)
     if (dropzone){
-      dropzone.ondragover = over;
+      dropzone.ondragover  = onOver;
       dropzone.ondragenter = (e)=> e.preventDefault();
-      dropzone.ondragleave = leave;
-      dropzone.ondrop = drop;
+      dropzone.ondragleave = onLeave;
+      dropzone.ondrop      = onDrop;
     }
   });
 }
