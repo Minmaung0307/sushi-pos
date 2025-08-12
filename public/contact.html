@@ -28,38 +28,45 @@
 
   <!-- EmailJS SDK -->
   <script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
-  <script>
-    (function(){
-      emailjs.init('WT0GOYrL9HnDKvLUf'); // <-- your EmailJS Public Key
+  <!-- Inside contact.html, REPLACE just the send handler with this friendlier version -->
+<script>
+  (function(){
+    emailjs.init({ publicKey: "WT0GOYrL9HnDKvLUf" });
 
-      var sendBtn = document.getElementById('ct-send');
-      var status = document.getElementById('ct-status');
+    const form = document.getElementById('contactForm');
+    const btn  = document.getElementById('ct-send');
+    const note = document.getElementById('ct-note');
 
-      sendBtn.addEventListener('click', function(){
-        var name = document.getElementById('ct-name').value.trim();
-        var email = document.getElementById('ct-email').value.trim();
-        var msg = document.getElementById('ct-msg').value.trim();
-        if (!name || !email || !msg) { status.textContent = 'Please fill all fields.'; return; }
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      if (!btn) return;
+      btn.disabled = true; btn.textContent = 'Sending…';
 
-        sendBtn.disabled = true;
-        status.textContent = 'Sending…';
+      const payload = {
+        from_name:  document.getElementById('ct-name').value.trim(),
+        reply_to:   document.getElementById('ct-email').value.trim(),
+        message:    document.getElementById('ct-msg').value.trim(),
+      };
 
-        emailjs.send('service_z9tkmvr', 'template_q5q471f', {
-          from_name: name,
-          reply_to: email,
-          message: msg
-        }).then(function(){
-          status.textContent = 'Message sent! We will reply soon.';
-          sendBtn.disabled = false;
-          document.getElementById('ct-name').value='';
-          document.getElementById('ct-email').value='';
-          document.getElementById('ct-msg').value='';
-        }).catch(function(err){
-          status.textContent = 'Failed to send: ' + (err && err.text ? err.text : 'Unknown error');
-          sendBtn.disabled = false;
+      emailjs.send("service_z9tkmvr","template_q5q471f", payload)
+        .then(function(){
+          btn.disabled = false; btn.textContent = 'Send';
+          note.textContent = 'Message sent! We will get back to you soon.';
+          note.className = 'ok';
+          form.reset();
+        })
+        .catch(function(err){
+          btn.disabled = false; btn.textContent = 'Send';
+          // Friendly copy for common Gmail OAuth error
+          var msg = (err && err.text) || (err && err.message) || 'Failed to send';
+          if (/Invalid grant/i.test(msg)) {
+            msg = 'Email service temporarily disconnected. Please try again later.';
+          }
+          note.textContent = 'Failed to send: ' + msg;
+          note.className = 'warn';
         });
-      });
-    })();
-  </script>
+    });
+  })();
+</script>
 </body>
 </html>

@@ -915,6 +915,29 @@ function viewSettings(){
   userModal();
 }
 
+function userModal(){
+  if (!canManage()) return '';
+  return `
+  <div class="modal-backdrop" id="mb-user"></div>
+  <div class="modal" id="m-user">
+    <div class="dialog">
+      <div class="head"><strong>User</strong><button class="btn ghost" data-close="m-user">Close</button></div>
+      <div class="body grid">
+        <input id="user-name" class="input" placeholder="Name" />
+        <input id="user-email" class="input" type="email" placeholder="Email" />
+        <input id="user-username" class="input" placeholder="Username" />
+        <select id="user-role">
+          <option value="user">User</option>
+          <option value="manager">Manager</option>
+          <option value="admin">Admin</option>
+        </select>
+        <input id="user-img" class="input" placeholder="Image URL (optional)" />
+      </div>
+      <div class="foot"><button class="btn" id="save-user">Save</button></div>
+    </div>
+  </div>`;
+}
+
 // Static pages (iframes)
 var pageContent = {
   policy: '<h3>Policy</h3><div style="border:1px solid var(--card-border);border-radius:12px;overflow:hidden"><iframe src="policy.html" style="width:100%;height:calc(100vh - 220px);border:none"></iframe></div>',

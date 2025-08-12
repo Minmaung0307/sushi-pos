@@ -329,6 +329,7 @@ body {
 
 /* Tasks board */
 .lane-row { margin-bottom: 16px; border: 1px dashed transparent; border-radius: 12px; }
+/* Keep highlight only on the whole lane */
 .lane-row.drop { border-color: var(--brand); background: rgba(14,165,165,.08); }
 .task-card { cursor: grab; }
 .task-card:active { cursor: grabbing; }
@@ -336,16 +337,17 @@ body {
 /* Always-available empty-lane drop target */
 /* Lane dropzones visible and hittable on mobile */
 .lane-grid { min-height: 160px; position: relative; }
+/* Invisible drop target, keep lane highlight via .lane-row.drop */
 .lane-dropzone {
-  height: 56px;
-  margin-bottom: 8px;
-  border: 2px dashed var(--card-border);
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  opacity: 0.6;
-  transition: background 120ms ease, opacity 120ms ease, border-color 120ms ease;
+  height: 0;               /* visually gone */
+  margin: 0;
+  border: none;
+  padding: 0;
+  overflow: hidden;
 }
+/* Remove the "Drop here" text completely */
+.lane-dropzone::after { content: ""; }
+
 .lane-row.drop .lane-dropzone {
   background: rgba(0,0,0,0.06);
   opacity: 1;
