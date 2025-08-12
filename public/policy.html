@@ -1,101 +1,64 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Privacy & Data Policy — Sushi POS</title>
-<style>
-  :root{
-    --bg:#0e1117;--fg:#e6edf3;--muted:#9fb1c1;--card:#0b1220;--border:#233042;--accent:#7aa2ff;
-  }
-  *{box-sizing:border-box}
-  body{
-    margin:0;background:linear-gradient(180deg,var(--bg),#0a0f15 60%,#0b121a);
-    color:var(--fg);font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial;
-    padding:24px;
-  }
-  .wrap{max-width:900px;margin:0 auto}
-  header{
-    border:1px solid var(--border);border-radius:16px;padding:24px;background:var(--card);
-    box-shadow:0 12px 30px rgba(0,0,0,.25)
-  }
-  h1{margin:0 0 4px 0;font-size:28px}
-  .subtitle{color:var(--muted);margin:0}
-  main{margin-top:18px;display:grid;gap:14px}
-  section{
-    background:#0b1422;border:1px solid var(--border);border-radius:14px;padding:16px 18px
-  }
-  h2{margin:0 0 6px 0;font-size:18px}
-  a{color:var(--accent);text-decoration:none}
-  code{background:#0f172a;border:1px solid var(--border);padding:2px 6px;border-radius:6px}
-  ul{margin:8px 0 0 18px}
-  .small{color:var(--muted);font-size:13px}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Policy · Inventory</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+  <style>
+    .hero { padding: 18px; border-radius: 16px;
+      background: linear-gradient(135deg, rgba(14,165,165,.18), rgba(8,145,178,.12)); }
+    .pill { display:inline-block; padding:6px 10px; border-radius:999px;
+      background: var(--panel-2); border:1px solid var(--card-border); font-size:12px; color:var(--muted); }
+    .section { margin-top: 16px; }
+    .section h3 { margin: 0 0 8px 0; }
+    .list li { margin: 6px 0; }
+  </style>
 </head>
-<body>
-<div class="wrap">
-  <header>
-    <h1>Privacy & Data Policy</h1>
-    <p class="subtitle">For the Sushi POS web app</p>
-  </header>
+<body style="padding:14px">
+  <div class="grid">
+    <div class="card">
+      <div class="card-body">
+        <div class="hero">
+          <div class="pill">Inventory</div>
+          <h2 style="margin:8px 0 4px">Policy</h2>
+          <div style="color:var(--muted)">Privacy & Terms</div>
+        </div>
 
-  <main>
-    <section>
-      <h2>Overview</h2>
-      <p>Sushi POS is a local-first web app. Your data is kept in your browser storage by default.
-         If you enable <strong>Cloud Sync</strong> in Settings, we store a copy in your Firebase
-         Realtime Database under your authenticated account.</p>
-    </section>
+        <div class="section">
+          <h3>Privacy</h3>
+          <ul class="list">
+            <li>We store application data locally in your browser first. If you enable <strong>Cloud Sync</strong> in Settings, your data is synchronized to your private Firebase Realtime Database path (<code>tenants/&lt;uid&gt;/kv/*</code>).</li>
+            <li>Authentication is provided by Firebase Auth. We use your email only to identify your account in the app.</li>
+            <li>We don’t sell or share personal information with third parties.</li>
+          </ul>
+        </div>
 
-    <section>
-      <h2>What we store</h2>
-      <ul>
-        <li><strong>Local (browser):</strong> inventory, products, posts, tasks, COGS, theme, user list (app roles).</li>
-        <li><strong>Cloud (optional):</strong> the same keys under <code>/tenants/{uid}/kv/*</code> in your Firebase RTDB when Sync is ON.</li>
-        <li><strong>Auth:</strong> Email &amp; password are handled by Firebase Authentication.</li>
-      </ul>
-    </section>
+        <div class="section">
+          <h3>Data Retention</h3>
+          <p>Local data persists until you clear the browser storage. Cloud data persists until you remove it from your Firebase project.</p>
+        </div>
 
-    <section>
-      <h2>How we use your data</h2>
-      <ul>
-        <li>To render the app and keep your data across sessions/devices when Cloud Sync is ON.</li>
-        <li>To enforce access rules so users can only read/write their own tenant data.</li>
-      </ul>
-    </section>
+        <div class="section">
+          <h3>Terms of Use</h3>
+          <ul class="list">
+            <li>Use the app responsibly and comply with applicable laws.</li>
+            <li>You are responsible for the accuracy of the data you enter.</li>
+            <li>The app is provided “as is,” without warranties.</li>
+          </ul>
+        </div>
 
-    <section>
-      <h2>Security</h2>
-      <ul>
-        <li>Access is controlled by Firebase Authentication.</li>
-        <li>Database Security Rules restrict access to <code>auth.uid</code>-scoped paths.</li>
-        <li>Always use HTTPS (Hosting provides this by default).</li>
-      </ul>
-    </section>
+        <div class="section">
+          <h3>Contact</h3>
+          <p>Questions? <a href="contact.html" target="_blank" rel="noopener">Contact us</a>.</p>
+        </div>
 
-    <section>
-      <h2>Retention & deletion</h2>
-      <ul>
-        <li>Local data stays in your browser until you clear it or uninstall the app.</li>
-        <li>Cloud data remains in your RTDB until you delete it or disable Sync and purge.</li>
-      </ul>
-    </section>
-
-    <section>
-      <h2>Your choices</h2>
-      <ul>
-        <li>Keep Sync OFF to stay fully local.</li>
-        <li>Turn Sync ON to use data across devices; you can turn it OFF any time.</li>
-        <li>Export or delete data from Firebase Console if you’re the project owner.</li>
-      </ul>
-    </section>
-
-    <section>
-      <h2>Contact</h2>
-      <p>Questions? Email <a href="mailto:minmaung0307@gmail.com">minmaung0307@gmail.com</a>.</p>
-      <p class="small">This document may change as the app evolves. We’ll update the date in the app footer when it does.</p>
-    </section>
-  </main>
-</div>
+        <div class="section" style="color:var(--muted);font-size:12px">
+          Last updated: <script>document.write(new Date().toISOString().slice(0,10))</script>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

@@ -1,186 +1,80 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>User Guide — Sushi POS</title>
-<style>
-  :root{
-    --bg:#0f1020;--fg:#ecf3ff;--muted:#b5c4e3;--card:#12142a;--accent:#9b87f5;--accent2:#22d3ee;--border:#2a2d4a;
-  }
-  *{box-sizing:border-box}
-  body{
-    margin:0;background:linear-gradient(135deg,#0f1020,#0c1220 60%,#0a101e);
-    color:var(--fg);font:16px/1.7 "Inter",system-ui,-apple-system,Segoe UI,Roboto,Arial;
-    padding:22px;
-  }
-  .wrap{max-width:1000px;margin:0 auto}
-  header{
-    background:conic-gradient(from 180deg at 80% -20%, #1f2357, #12142a 60%);
-    border:1px solid var(--border);border-radius:20px;padding:26px;
-    box-shadow:0 18px 50px rgba(0,0,0,.35)
-  }
-  h1{margin:0 0 6px 0;font-size:30px}
-  .sub{color:var(--muted);margin:0}
-  .toc{
-    display:flex;flex-wrap:wrap;gap:8px;margin-top:14px
-  }
-  .toc a{
-    text-decoration:none;color:#fff;background:linear-gradient(90deg,var(--accent),var(--accent2));
-    padding:8px 12px;border-radius:999px;font-size:13px;border:1px solid #0002
-  }
-  main{margin-top:18px;display:grid;gap:14px}
-  section{
-    background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px 18px
-  }
-  h2{margin:0 0 8px 0;font-size:20px}
-  h3{margin:10px 0 6px 0;font-size:16px}
-  details{border:1px dashed var(--border);border-radius:12px;padding:10px 12px;margin:8px 0;background:#0f142c}
-  summary{cursor:pointer;font-weight:600}
-  code{background:#0b1130;border:1px solid var(--border);padding:2px 6px;border-radius:6px}
-  pre{background:#0b1130;border:1px solid var(--border);padding:12px;border-radius:12px;overflow:auto}
-  ul{margin:6px 0 0 20px}
-  .kbd{display:inline-block;border:1px solid var(--border);border-bottom-width:2px;border-radius:8px;padding:2px 6px;background:#0d1434}
-  a{color:#9bdcff;text-decoration:none}
-  .tip{color:#a7ffb6}
-  .warn{color:#ffd27a}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>User Guide · Inventory</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    .header { padding: 18px; border-radius: 16px;
+      background: linear-gradient(135deg, rgba(59,130,246,.15), rgba(14,165,165,.12)); }
+    details { border:1px solid var(--card-border); border-radius:12px; padding:10px 12px; background: var(--panel-2); }
+    details + details { margin-top:10px; }
+    summary { cursor:pointer; font-weight:700; }
+  </style>
 </head>
-<body>
-<div class="wrap">
-  <header>
-    <h1>User Guide</h1>
-    <p class="sub">How to use Sushi POS efficiently (web app)</p>
-    <div class="toc">
-      <a href="#getting-started">Getting started</a>
-      <a href="#roles">Roles</a>
-      <a href="#home">Home</a>
-      <a href="#inventory">Inventory</a>
-      <a href="#products">Products</a>
-      <a href="#cogs">COGS</a>
-      <a href="#tasks">Tasks</a>
-      <a href="#search">Search</a>
-      <a href="#settings">Settings</a>
-      <a href="#sync">Offline & Sync</a>
-      <a href="#troubleshooting">Troubleshooting</a>
+<body style="padding:14px">
+  <div class="grid">
+    <div class="card">
+      <div class="card-body">
+        <div class="header">
+          <h2 style="margin:0 0 6px">User Guide</h2>
+          <div style="color:var(--muted)">Quick tips for managers & staff</div>
+        </div>
+
+        <div style="margin-top:14px" class="grid">
+          <details open>
+            <summary>Sign in & roles</summary>
+            <p>Use your email and password to sign in. Admin/Manager can manage users from <strong>Settings → Users</strong>.</p>
+          </details>
+
+          <details>
+            <summary>Inventory</summary>
+            <ul>
+              <li>Add items, adjust stock/threshold, and watch for low/critical highlights.</li>
+              <li>Export CSV anytime from the top-right of the Inventory page.</li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>Products</summary>
+            <ul>
+              <li>Keep barcodes, ingredients, and instructions up to date.</li>
+              <li>Click a product thumbnail to open a detail preview.</li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>COGS</summary>
+            <ul>
+              <li>Enter daily rows; totals and gross profit calculate automatically.</li>
+              <li>Dashboard shows same-month year-over-year (YoY) gross income.</li>
+              <li>Export CSV from the COGS page.</li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>Tasks</summary>
+            <ul>
+              <li>Drag & drop tasks freely among <em>To do</em>, <em>In progress</em>, and <em>Done</em>, even when lanes are empty.</li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>Cloud Sync (optional)</summary>
+            <ul>
+              <li>Turn ON in <strong>Settings</strong> to sync local data to your Firebase RTDB (private to your user UID).</li>
+              <li>Use <em>Sync Now</em> for a manual push when needed.</li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>Theme</summary>
+            <p>Switch mode and font size in <strong>Settings</strong>; changes apply instantly.</p>
+          </details>
+        </div>
+      </div>
     </div>
-  </header>
-
-  <main>
-    <section id="getting-started">
-      <h2>Getting started</h2>
-      <details open>
-        <summary>Sign in</summary>
-        <ul>
-          <li>Open the app URL and sign in with your email + password.</li>
-          <li>If your email is listed as a super admin, you’ll see admin features immediately.</li>
-        </ul>
-      </details>
-      <details>
-        <summary>Keyboard basics</summary>
-        <ul>
-          <li><span class="kbd">Tab</span> to move between fields, <span class="kbd">Enter</span> to submit.</li>
-          <li>Use the sidebar to navigate; on mobile, tap the menu icon.</li>
-        </ul>
-      </details>
-    </section>
-
-    <section id="roles">
-      <h2>Roles</h2>
-      <ul>
-        <li><strong>Admin</strong> – full access, manage roles.</li>
-        <li><strong>Manager</strong> – create/edit content (inventory, products, tasks, COGS).</li>
-        <li><strong>User</strong> – read-only by default (unless you elevate in Settings &gt; Users).</li>
-      </ul>
-    </section>
-
-    <section id="home">
-      <h2>Home</h2>
-      <p>Quick tiles to jump into Inventory, Products, COGS, and Tasks. A good daily starting point.</p>
-    </section>
-
-    <section id="inventory">
-      <h2>Inventory</h2>
-      <h3>Add & edit items</h3>
-      <ul>
-        <li>Click <em>Add Item</em> to create a new stock row.</li>
-        <li>Each row shows an image, code, type, price, stock, and a low-stock threshold.</li>
-      </ul>
-      <h3>Adjust stock</h3>
-      <ul>
-        <li>Use <strong>+</strong>/<strong>–</strong> to change stock quickly.</li>
-        <li>Rows turn amber/red as they near or cross thresholds.</li>
-      </ul>
-      <p class="tip">Tip: On phones, tap the image to see a larger preview.</p>
-    </section>
-
-    <section id="products">
-      <h2>Products</h2>
-      <ul>
-        <li>Manage sellable items with barcode, price, type, and instructions.</li>
-        <li>Click a product image/card to view details in a modal.</li>
-      </ul>
-    </section>
-
-    <section id="cogs">
-      <h2>COGS</h2>
-      <ul>
-        <li>Add daily rows for gross income and costs (produce, items, freight, delivery, other).</li>
-        <li>Totals and gross profit are calculated automatically at the bottom.</li>
-      </ul>
-    </section>
-
-    <section id="tasks">
-      <h2>Tasks</h2>
-      <ul>
-        <li>Three lanes: <em>To do</em>, <em>In progress</em>, <em>Done</em>.</li>
-        <li>Drag & drop between lanes—even when a lane is empty.</li>
-        <li>Movement rules: To do ↔ In progress ↔ Done (with sensible restrictions).</li>
-      </ul>
-      <p class="warn">If a move is not allowed, you’ll see a notice.</p>
-    </section>
-
-    <section id="search">
-      <h2>Search</h2>
-      <p>Use the global search box in the sidebar to find anything across posts, inventory, products, COGS, and users.</p>
-    </section>
-
-    <section id="settings">
-      <h2>Settings</h2>
-      <ul>
-        <li><strong>Cloud Sync:</strong> turn ON to sync to Firebase RTDB; turn OFF to stay fully local.</li>
-        <li><strong>Theme:</strong> switch mode and font size instantly.</li>
-        <li><strong>Users:</strong> (admin/manager only) set roles for emails that sign in.</li>
-      </ul>
-    </section>
-
-    <section id="sync">
-      <h2>Offline & Sync</h2>
-      <ul>
-        <li>Works offline using local storage.</li>
-        <li>When Sync is ON, data lives under <code>/tenants/{uid}/kv/*</code> in your RTDB and updates live across devices.</li>
-      </ul>
-    </section>
-
-    <section id="troubleshooting">
-      <h2>Troubleshooting</h2>
-      <details>
-        <summary>I can’t sign in</summary>
-        <ul>
-          <li>Confirm the email exists in Firebase Authentication users list.</li>
-          <li>Reset password if needed (Firebase Auth).</li>
-        </ul>
-      </details>
-      <details>
-        <summary>My data doesn’t sync</summary>
-        <ul>
-          <li>Check Settings → Cloud Sync is ON.</li>
-          <li>Ensure RTDB rules allow <code>auth.uid</code> to its own tenant path.</li>
-          <li>Open the browser console for any errors.</li>
-        </ul>
-      </details>
-    </section>
-  </main>
-</div>
+  </div>
 </body>
 </html>

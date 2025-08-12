@@ -1,111 +1,57 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Contact Us — Sushi POS</title>
-<style>
-  :root{
-    --bg:#f8fafc;--fg:#0f172a;--muted:#64748b;--accent:#0ea5a5;
-    --border:#e2e8f0;--card:#ffffff;--error:#ef4444;--success:#10b981;
-  }
-  *{box-sizing:border-box}
-  body{
-    margin:0;background:var(--bg);color:var(--fg);
-    font:16px/1.6 "Inter",system-ui,-apple-system,Segoe UI,Roboto,Arial;
-    padding:20px;
-  }
-  .wrap{max-width:700px;margin:0 auto}
-  header{
-    text-align:center;margin-bottom:24px;
-  }
-  h1{margin:0;font-size:28px}
-  p.sub{color:var(--muted);margin:6px 0 0 0}
-  form{
-    background:var(--card);border:1px solid var(--border);border-radius:16px;
-    padding:24px;display:grid;gap:18px;
-    box-shadow:0 10px 28px rgba(0,0,0,.05)
-  }
-  label{font-weight:600}
-  input,textarea{
-    width:100%;padding:12px;border:1px solid var(--border);
-    border-radius:8px;font:inherit;
-    transition:border-color .2s, box-shadow .2s;
-  }
-  input:focus,textarea:focus{
-    outline:none;border-color:var(--accent);
-    box-shadow:0 0 0 2px rgba(14,165,165,0.2);
-  }
-  textarea{resize:vertical;min-height:120px}
-  button{
-    padding:12px 20px;background:var(--accent);color:#fff;
-    font-weight:600;border:none;border-radius:8px;cursor:pointer;
-    transition:background .2s;
-  }
-  button:hover{background:#0c9696}
-  .status{
-    padding:10px 14px;border-radius:8px;font-size:14px;display:none;
-  }
-  .status.success{background:rgba(16,185,129,0.1);color:var(--success);display:block}
-  .status.error{background:rgba(239,68,68,0.1);color:var(--error);display:block}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Contact · Inventory</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    .header { padding: 18px; border-radius: 16px;
+      background: linear-gradient(135deg, rgba(239,68,68,.15), rgba(14,165,165,.10)); }
+    .contact-card { max-width: 780px; margin: 0 auto; }
+    .info { color: var(--muted); font-size: 14px; }
+  </style>
 </head>
-<body>
-<div class="wrap">
-  <header>
-    <h1>Contact Us</h1>
-    <p class="sub">Have a question or suggestion? Send us a message below.</p>
-  </header>
+<body style="padding:14px">
+  <div class="grid">
+    <div class="card contact-card">
+      <div class="card-body">
+        <div class="header">
+          <h2 style="margin:0 0 6px">Contact</h2>
+          <div class="info">We’d love to hear from you. Send a message below.</div>
+        </div>
 
-  <form id="contactForm">
-    <div>
-      <label for="name">Name</label>
-      <input type="text" id="name" name="name" placeholder="Your full name" required>
+        <form style="margin-top:14px" onsubmit="sendMail(event)">
+          <div class="grid cols-2">
+            <input id="name" class="input" placeholder="Your name" required />
+            <input id="email" class="input" type="email" placeholder="Your email" required />
+          </div>
+          <input id="subject" class="input" placeholder="Subject" style="margin-top:10px" />
+          <textarea id="message" class="input" rows="6" placeholder="Message" style="margin-top:10px" required></textarea>
+          <div style="display:flex;justify-content:flex-end;margin-top:12px">
+            <button type="submit" class="btn"><i class="ri-send-plane-line"></i> Send</button>
+          </div>
+        </form>
+
+        <div style="margin-top:16px;color:var(--muted);font-size:12px">
+          Or email us directly:
+          <a href="mailto:hello@example.com?subject=Inventory%20Support">hello@example.com</a>
+        </div>
+      </div>
     </div>
+  </div>
 
-    <div>
-      <label for="email">Email</label>
-      <input type="email" id="email" name="email" placeholder="you@example.com" required>
-    </div>
-
-    <div>
-      <label for="message">Message</label>
-      <textarea id="message" name="message" placeholder="Write your message..." required></textarea>
-    </div>
-
-    <button type="submit">Send Message</button>
-
-    <div id="statusMsg" class="status"></div>
-  </form>
-</div>
-
-<script>
-document.getElementById('contactForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-
-  const name = document.getElementById('name').value.trim();
-  const email = document.getElementById('email').value.trim();
-  const message = document.getElementById('message').value.trim();
-  const statusMsg = document.getElementById('statusMsg');
-
-  if(!name || !email || !message){
-    statusMsg.textContent = 'Please fill in all fields.';
-    statusMsg.className = 'status error';
-    return;
-  }
-
-  try {
-    // Here we send the message to your email via EmailJS or Firebase Function
-    // Example using mailto (simple, but opens email client):
-    window.location.href = `mailto:minmaung0307@gmail.com?subject=Contact from ${encodeURIComponent(name)}&body=${encodeURIComponent(message)}%0A%0AFrom: ${email}`;
-    
-    statusMsg.textContent = 'Opening your email client...';
-    statusMsg.className = 'status success';
-  } catch (err) {
-    statusMsg.textContent = 'Something went wrong. Please try again.';
-    statusMsg.className = 'status error';
-  }
-});
-</script>
+  <script>
+    function sendMail(e){
+      e.preventDefault();
+      var n = document.getElementById('name').value.trim();
+      var em = document.getElementById('email').value.trim();
+      var s = document.getElementById('subject').value.trim() || 'Inventory Contact';
+      var m = document.getElementById('message').value.trim();
+      var body = encodeURIComponent("From: " + n + " <" + em + ">\n\n" + m);
+      var href = 'mailto:hello@example.com?subject=' + encodeURIComponent(s) + '&body=' + body;
+      window.location.href = href;
+    }
+  </script>
 </body>
 </html>
