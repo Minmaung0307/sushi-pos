@@ -1,57 +1,65 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Contact · Inventory</title>
+  <title>Contact</title>
   <link rel="stylesheet" href="css/styles.css" />
-  <style>
-    .header { padding: 18px; border-radius: 16px;
-      background: linear-gradient(135deg, rgba(239,68,68,.15), rgba(14,165,165,.10)); }
-    .contact-card { max-width: 780px; margin: 0 auto; }
-    .info { color: var(--muted); font-size: 14px; }
-  </style>
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
 </head>
-<body style="padding:14px">
-  <div class="grid">
-    <div class="card contact-card">
-      <div class="card-body">
-        <div class="header">
-          <h2 style="margin:0 0 6px">Contact</h2>
-          <div class="info">We’d love to hear from you. Send a message below.</div>
-        </div>
+<body>
+  <div class="card" style="max-width: 760px; margin: 24px auto;">
+    <div class="card-body">
+      <h3 style="margin:0 0 8px 0">Contact</h3>
+      <p>Send a message and we’ll email you back.</p>
 
-        <form style="margin-top:14px" onsubmit="sendMail(event)">
-          <div class="grid cols-2">
-            <input id="name" class="input" placeholder="Your name" required />
-            <input id="email" class="input" type="email" placeholder="Your email" required />
-          </div>
-          <input id="subject" class="input" placeholder="Subject" style="margin-top:10px" />
-          <textarea id="message" class="input" rows="6" placeholder="Message" style="margin-top:10px" required></textarea>
-          <div style="display:flex;justify-content:flex-end;margin-top:12px">
-            <button type="submit" class="btn"><i class="ri-send-plane-line"></i> Send</button>
-          </div>
-        </form>
-
-        <div style="margin-top:16px;color:var(--muted);font-size:12px">
-          Or email us directly:
-          <a href="mailto:hello@example.com?subject=Inventory%20Support">hello@example.com</a>
-        </div>
+      <div class="grid cols-2">
+        <input id="ct-name" class="input" placeholder="Your name" />
+        <input id="ct-email" class="input" type="email" placeholder="Your email" />
       </div>
+      <textarea id="ct-msg" class="input" rows="6" placeholder="Message"></textarea>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px">
+        <button id="ct-send" class="btn"><i class="ri-send-plane-line"></i> Send</button>
+      </div>
+
+      <p id="ct-status" style="color:var(--muted); margin-top:8px"></p>
     </div>
   </div>
 
+  <!-- EmailJS SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
   <script>
-    function sendMail(e){
-      e.preventDefault();
-      var n = document.getElementById('name').value.trim();
-      var em = document.getElementById('email').value.trim();
-      var s = document.getElementById('subject').value.trim() || 'Inventory Contact';
-      var m = document.getElementById('message').value.trim();
-      var body = encodeURIComponent("From: " + n + " <" + em + ">\n\n" + m);
-      var href = 'mailto:hello@example.com?subject=' + encodeURIComponent(s) + '&body=' + body;
-      window.location.href = href;
-    }
+    (function(){
+      emailjs.init('WT0GOYrL9HnDKvLUf'); // <-- your EmailJS Public Key
+
+      var sendBtn = document.getElementById('ct-send');
+      var status = document.getElementById('ct-status');
+
+      sendBtn.addEventListener('click', function(){
+        var name = document.getElementById('ct-name').value.trim();
+        var email = document.getElementById('ct-email').value.trim();
+        var msg = document.getElementById('ct-msg').value.trim();
+        if (!name || !email || !msg) { status.textContent = 'Please fill all fields.'; return; }
+
+        sendBtn.disabled = true;
+        status.textContent = 'Sending…';
+
+        emailjs.send('service_z9tkmvr', 'template_q5q471f', {
+          from_name: name,
+          reply_to: email,
+          message: msg
+        }).then(function(){
+          status.textContent = 'Message sent! We will reply soon.';
+          sendBtn.disabled = false;
+          document.getElementById('ct-name').value='';
+          document.getElementById('ct-email').value='';
+          document.getElementById('ct-msg').value='';
+        }).catch(function(err){
+          status.textContent = 'Failed to send: ' + (err && err.text ? err.text : 'Unknown error');
+          sendBtn.disabled = false;
+        });
+      });
+    })();
   </script>
 </body>
 </html>
