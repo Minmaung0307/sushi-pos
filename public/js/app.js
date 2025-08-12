@@ -1334,64 +1334,77 @@ function wireCOGS(){
 }
 
 // Tasks DnD + wiring
+// Tasks DnD — free move anywhere, even into empty lanes
 function setupDnD(){
-  const lanes = ['todo','inprogress','done'];
+  // global-ish stash for the id of the card being dragged
+  let dragId = null;
 
-  // 1) Make each task draggable and remember the dragged id globally
-  $$('[data-task]').forEach(card=>{
-    card.ondragstart = (e)=> {
-      DRAG_ID = card.getAttribute('data-task');
+  // Make every task card draggable
+  document.querySelectorAll('.task-card[data-task]').forEach(card => {
+    card.addEventListener('dragstart', (e) => {
+      dragId = card.getAttribute('data-task');
       try {
-        e.dataTransfer.setData('text/plain', DRAG_ID);
+        e.dataTransfer.setData('text/plain', dragId);
         e.dataTransfer.effectAllowed = 'move';
       } catch (_) {}
-    };
-    card.ondragend = ()=>{
-      DRAG_ID = null;
-      document.querySelectorAll('.lane-row.drop').forEach(el=> el.classList.remove('drop'));
-    };
+    });
+
+    card.addEventListener('dragend', () => {
+      dragId = null;
+      document.querySelectorAll('.lane-row.drop').forEach(el => el.classList.remove('drop'));
+    });
   });
 
-  // 2) Lanes (and their always-present dropzones) accept drops even when empty
-  lanes.forEach(k=>{
-    const laneGrid  = $('#lane-'+k);
-    const dropzone  = document.querySelector(`.lane-dropzone[data-dropzone="${k}"]`);
-    const parentRow = laneGrid?.closest('.lane-row');
+  const lanes = ['todo', 'inprogress', 'done'];
 
-    const onOver = (e)=>{
-      e.preventDefault(); // required to allow dropping
-      // With "free move", if there's a dragged card, show highlight
-      if (DRAG_ID) parentRow?.classList.add('drop'); else parentRow?.classList.remove('drop');
-    };
-    const onLeave = ()=> parentRow?.classList.remove('drop');
-    const onDrop = (e)=>{
+  lanes.forEach(k => {
+    const laneGrid = document.getElementById(`lane-${k}`);
+    const dropzone = document.querySelector(`.lane-dropzone[data-dropzone="${k}"]`);
+    const parentCard = laneGrid ? laneGrid.closest('.lane-row') : null;
+
+    const onDragOver = (e) => {
+      // Allow dropping
       e.preventDefault();
-      parentRow?.classList.remove('drop');
-      if (!DRAG_ID) return;
+      if (parentCard) parentCard.classList.add('drop');
+      try { e.dataTransfer.dropEffect = 'move'; } catch(_) {}
+    };
 
+    const onDragLeave = () => {
+      if (parentCard) parentCard.classList.remove('drop');
+    };
+
+    const onDrop = (e) => {
+      e.preventDefault();
+      if (parentCard) parentCard.classList.remove('drop');
+
+      // Get the dragged id (from stash or transfer)
+      const id = dragId || (e.dataTransfer && e.dataTransfer.getData('text/plain')) || '';
+      if (!id) return;
+
+      // Move it — no restrictions, free anywhere
       const items = load('tasks', []);
-      const t = items.find(x=>x.id===DRAG_ID); if (!t) return;
+      const t = items.find(x => x.id === id);
+      if (!t) return;
 
-      // FREE MOVE: allow to move to any lane (including from empty -> empty)
       t.status = k;
       save('tasks', items);
-      DRAG_ID = null;
-      renderApp();
+      renderApp(); // will re-render lanes with the new card position
     };
 
-    // lane container (works when it has cards)
-    if (laneGrid){
-      laneGrid.ondragover  = onOver;
-      laneGrid.ondragenter = (e)=> e.preventDefault();
-      laneGrid.ondragleave = onLeave;
-      laneGrid.ondrop      = onDrop;
+    // Attach to the whole lane (so you can drop anywhere in that column)
+    if (laneGrid) {
+      laneGrid.addEventListener('dragover', onDragOver);
+      laneGrid.addEventListener('dragenter', (e) => e.preventDefault());
+      laneGrid.addEventListener('dragleave', onDragLeave);
+      laneGrid.addEventListener('drop', onDrop);
     }
-    // always-present dropzone (works when lane is empty)
-    if (dropzone){
-      dropzone.ondragover  = onOver;
-      dropzone.ondragenter = (e)=> e.preventDefault();
-      dropzone.ondragleave = onLeave;
-      dropzone.ondrop      = onDrop;
+
+    // And also attach to the always-present dropzone
+    if (dropzone) {
+      dropzone.addEventListener('dragover', onDragOver);
+      dropzone.addEventListener('dragenter', (e) => e.preventDefault());
+      dropzone.addEventListener('dragleave', onDragLeave);
+      dropzone.addEventListener('drop', onDrop);
     }
   });
 }
