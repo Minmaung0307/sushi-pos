@@ -1,72 +1,63 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Contact</title>
-  <link rel="stylesheet" href="css/styles.css" />
   <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+  <style>
+    body{margin:0;background:transparent;color:inherit;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Inter,Arial}
+    .wrap{padding:12px}
+    .grid{display:grid;gap:10px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .input,textarea,button{width:100%;padding:10px 12px;border-radius:12px;border:1px solid #1f2a37;background:#0f1520;color:#e8f1f1}
+    button{background:#0ea5a5;color:#fff;border:none;cursor:pointer}
+    .note{color:#9ab0b0;font-size:12px}
+  </style>
 </head>
 <body>
-  <div class="card" style="max-width: 760px; margin: 24px auto;">
-    <div class="card-body">
-      <h3 style="margin:0 0 8px 0">Contact</h3>
-      <p>Send a message and we’ll email you back.</p>
-
-      <div class="grid cols-2">
-        <input id="ct-name" class="input" placeholder="Your name" />
-        <input id="ct-email" class="input" type="email" placeholder="Your email" />
+  <div class="wrap">
+    <h3 style="margin:0 0 8px 0">Contact</h3>
+    <div class="grid">
+      <div class="row">
+        <input id="name" class="input" placeholder="Your name">
+        <input id="email" class="input" type="email" placeholder="Your email">
       </div>
-      <textarea id="ct-msg" class="input" rows="6" placeholder="Message"></textarea>
-      <div style="display:flex;justify-content:flex-end;margin-top:10px">
-        <button id="ct-send" class="btn"><i class="ri-send-plane-line"></i> Send</button>
+      <textarea id="message" class="input" rows="6" placeholder="Message"></textarea>
+      <div style="display:flex;justify-content:flex-end">
+        <button id="send"><i class="ri-send-plane-line"></i> Send</button>
       </div>
-
-      <p id="ct-status" style="color:var(--muted); margin-top:8px"></p>
+      <div id="resp" class="note"></div>
     </div>
   </div>
 
-  <!-- EmailJS SDK -->
-  <script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
-  <!-- Inside contact.html, REPLACE just the send handler with this friendlier version -->
-<script>
-  (function(){
-    emailjs.init({ publicKey: "WT0GOYrL9HnDKvLUf" });
+  <!-- EmailJS -->
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+  <script>
+    // ⚠️ Replace with your actual IDs from EmailJS Dashboard
+    const SERVICE_ID  = "service_z9tkmvr";
+    const TEMPLATE_ID = "template_q5q471f";
+    const PUBLIC_KEY  = "WT0GOYrL9HnDKvLUf";
 
-    const form = document.getElementById('contactForm');
-    const btn  = document.getElementById('ct-send');
-    const note = document.getElementById('ct-note');
+    emailjs.init(PUBLIC_KEY);
 
-    form.addEventListener('submit', function(e){
-      e.preventDefault();
-      if (!btn) return;
-      btn.disabled = true; btn.textContent = 'Sending…';
+    document.getElementById('send').addEventListener('click', async ()=>{
+      const name = document.getElementById('name').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const message = document.getElementById('message').value.trim();
+      const r = document.getElementById('resp');
 
-      const payload = {
-        from_name:  document.getElementById('ct-name').value.trim(),
-        reply_to:   document.getElementById('ct-email').value.trim(),
-        message:    document.getElementById('ct-msg').value.trim(),
-      };
-
-      emailjs.send("service_z9tkmvr","template_q5q471f", payload)
-        .then(function(){
-          btn.disabled = false; btn.textContent = 'Send';
-          note.textContent = 'Message sent! We will get back to you soon.';
-          note.className = 'ok';
-          form.reset();
-        })
-        .catch(function(err){
-          btn.disabled = false; btn.textContent = 'Send';
-          // Friendly copy for common Gmail OAuth error
-          var msg = (err && err.text) || (err && err.message) || 'Failed to send';
-          if (/Invalid grant/i.test(msg)) {
-            msg = 'Email service temporarily disconnected. Please try again later.';
-          }
-          note.textContent = 'Failed to send: ' + msg;
-          note.className = 'warn';
-        });
+      if (!name || !email || !message){
+        r.textContent = 'Please fill name, email and a message.'; return;
+      }
+      r.textContent = 'Sending…';
+      try{
+        await emailjs.send(SERVICE_ID, TEMPLATE_ID, { from_name:name, reply_to:email, message });
+        r.textContent = 'Sent! We’ll get back to you soon.';
+      }catch(e){
+        r.textContent = 'Failed to send: ' + (e?.text || e?.message || 'Unknown error') + '.';
+      }
     });
-  })();
-</script>
+  </script>
 </body>
 </html>

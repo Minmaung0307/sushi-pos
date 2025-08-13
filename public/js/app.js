@@ -1,4 +1,9 @@
-// --- Firebase (Auth + Realtime Database)
+// Part A — Firebase + utils + seed + theme + cloud + auth
+/* =========================
+   Part A — Core setup
+   ========================= */
+
+// --- Firebase (Auth + RTDB)
 const firebaseConfig = {
   apiKey: "AIzaSyBY52zMMQqsvssukui3TfQnMigWoOzeKGk",
   authDomain: "you-6bddf.firebaseapp.com",
@@ -11,7 +16,7 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
-const db   = firebase.database();
+const rtdb = firebase.database();
 
 // --- DOM helpers
 const $  = (sel, root=document) => root.querySelector(sel);
@@ -21,55 +26,55 @@ const notify = (msg, type='ok') => {
   n.textContent = msg; n.className = `notification show ${type}`;
   setTimeout(()=> n.className='notification', 2200);
 };
-function save(key, val){
-  localStorage.setItem(key, JSON.stringify(val));
-  if (cloud.isOn()) cloud.saveKV(key, val).catch(()=>{});
-}
+
+// Safe save/load (save calls cloud if ready)
 function load(key, fallback){
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
   catch { return fallback; }
 }
+function save(key, val){
+  localStorage.setItem(key, JSON.stringify(val));
+  if (window.cloud && cloud.isOn()) cloud.saveKV(key, val).catch(()=>{});
+}
 
-// --- Globals & Prefill
-const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com'];
+// Globals
+const SUPER_ADMINS = ['admin@sushi.com','minmaung0307@gmail.com'];
 let session = load('session', null);
 let currentRoute = load('_route', 'home');
 let searchQuery  = load('_searchQ', '');
 
-// seed once
+// One-time local seed
 (function seedOnFirstRun(){
   if (load('_seeded', false)) return;
   const now = Date.now();
-  const users = [
-    { name:'Admin',   username:'admin',   email:'admin@sushi.com',        contact:'', role:'admin',   password:'', img:'' },
-    { name:'Manager', username:'manager', email:'minmaung0307@gmail.com', contact:'', role:'manager', password:'', img:'' },
-    { name:'Cashier', username:'cashier1',email:'cashier@sushi.com',      contact:'', role:'user',    password:'', img:'' },
-  ];
-  const inventory = [
+  save('users', [
+    { name:'Admin',   username:'admin',   email:'admin@sushi.com',         role:'admin',   img:'' },
+    { name:'Manager', username:'manager', email:'minmaung0307@gmail.com',  role:'manager', img:'' },
+    { name:'Cashier', username:'cashier', email:'cashier@sushi.com',       role:'user',    img:'' },
+  ]);
+  save('inventory', [
     { id:'inv1', img:'', name:'Nori Sheets', code:'NOR-100', type:'Dry', price:3.00, stock:80, threshold:30 },
     { id:'inv2', img:'', name:'Sushi Rice',  code:'RIC-200', type:'Dry', price:1.50, stock:24, threshold:20 },
     { id:'inv3', img:'', name:'Fresh Salmon',code:'SAL-300', type:'Raw', price:7.80, stock:10, threshold:12 },
-  ];
-  const products = [
+  ]);
+  save('products', [
     { id:'p1', img:'', name:'Salmon Nigiri',   barcode:'11100001', price:5.99, type:'Nigiri', ingredients:'Rice, Salmon', instructions:'Brush with nikiri.' },
     { id:'p2', img:'', name:'California Roll', barcode:'11100002', price:7.49, type:'Roll',   ingredients:'Rice, Nori, Crab, Avocado', instructions:'8 pcs.' },
-  ];
-  const posts = [{ id:'post1', title:'Welcome to Inventory', body:'Track stock, manage products, and work faster.', img:'', createdAt: now }];
-  const tasks = [
-    { id:'t1', title:'Prep Salmon',        status:'todo' },
-    { id:'t2', title:'Cook Rice',          status:'inprogress' },
-    { id:'t3', title:'Sanitize Station',   status:'done' },
-  ];
-  const cogs = [
-    { id:'c1', date:'2024-08-01', grossIncome: 1200, produceCost:280, itemCost:180, freight:45, delivery:30, other:20 },
-    { id:'c2', date:'2024-08-02', grossIncome:  900, produceCost:220, itemCost:140, freight:30, delivery:25, other:10 }
-  ];
-  save('users', users); save('inventory', inventory); save('products', products);
-  save('posts', posts); save('tasks', tasks); save('cogs', cogs);
+  ]);
+  save('posts', [{ id:'post1', title:'Welcome to Inventory', body:'Track stock, manage products, and work faster.', img:'', createdAt: now }]);
+  save('tasks', [
+    { id:'t1', title:'Prep Salmon',      status:'todo' },
+    { id:'t2', title:'Cook Rice',        status:'inprogress' },
+    { id:'t3', title:'Sanitize Station', status:'done' },
+  ]);
+  save('cogs', [
+    { id:'c1', date:'2024-08-01', grossIncome:1200, produceCost:280, itemCost:180, freight:45, delivery:30, other:20 },
+    { id:'c2', date:'2024-08-02', grossIncome: 900, produceCost:220, itemCost:140, freight:30, delivery:25, other:10 }
+  ]);
   save('_seeded', true);
 })();
 
-// --- Theme
+// Theme
 const THEME_MODES = [
   { key:'light', name:'Light' },
   { key:'dark',  name:'Dark'  },
@@ -89,21 +94,21 @@ function applyTheme(){
 }
 applyTheme();
 
-// --- Cloud Sync (RTDB)
+// Cloud Sync (RTDB tenants/{uid}/kv/{key})
 const CLOUD_KEYS = ['inventory','products','posts','tasks','cogs','users','_theme2'];
 const cloud = (function(){
   let liveRefs = [];
   function uid(){ return auth.currentUser?.uid; }
   function on(){ return !!load('_cloudOn', false); }
   function setOn(v){ save('_cloudOn', !!v); }
-  function pathFor(key){ return db.ref(`tenants/${uid()}/kv/${key}`); }
+  function pathFor(key){ return rtdb.ref(`tenants/${uid()}/kv/${key}`); }
   async function saveKV(key, val){
     if (!on() || !uid()) return;
     await pathFor(key).set({ key, val, updatedAt: firebase.database.ServerValue.TIMESTAMP });
   }
   async function pullAllOnce(){
     if (!uid()) return;
-    const snap = await db.ref(`tenants/${uid()}/kv`).get();
+    const snap = await rtdb.ref(`tenants/${uid()}/kv`).get();
     if (!snap.exists()) return;
     const all = snap.val() || {};
     Object.values(all).forEach(row=>{
@@ -118,8 +123,7 @@ const cloud = (function(){
     CLOUD_KEYS.forEach(key=>{
       const ref = pathFor(key);
       const handler = ref.on('value', (snap)=>{
-        const data = snap.val();
-        if (!data) return;
+        const data = snap.val(); if (!data) return;
         const curr = load(key, null);
         if (JSON.stringify(curr) !== JSON.stringify(data.val)){
           localStorage.setItem(key, JSON.stringify(data.val));
@@ -130,10 +134,7 @@ const cloud = (function(){
       liveRefs.push({ ref, handler });
     });
   }
-  function unsubscribeAll(){
-    liveRefs.forEach(({ref})=>{ try{ ref.off(); }catch{} });
-    liveRefs = [];
-  }
+  function unsubscribeAll(){ liveRefs.forEach(({ref})=>{ try{ref.off();}catch{} }); liveRefs = []; }
   async function pushAll(){
     if (!uid()) return;
     for (const k of CLOUD_KEYS){
@@ -154,22 +155,20 @@ const cloud = (function(){
   return { isOn:on, enable, disable, saveKV, pullAllOnce, subscribeAll, pushAll };
 })();
 
-// --- Router & Idle
+// Router & idle
 function go(route){ currentRoute = route; save('_route', route); renderApp(); }
 let idleTimer = null;
 const IDLE_LIMIT = 10 * 60 * 1000;
 function resetIdleTimer(){
   if (!session) return;
   if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(async () => {
-    try { await auth.signOut(); } finally { notify('Signed out due to inactivity','warn'); }
-  }, IDLE_LIMIT);
+  idleTimer = setTimeout(async () => { try { await auth.signOut(); } finally { notify('Signed out due to inactivity','warn'); } }, IDLE_LIMIT);
 }
 ['click','mousemove','keydown','touchstart','scroll'].forEach(evt => {
   window.addEventListener(evt, resetIdleTimer, { passive: true });
 });
 
-// --- Auth state
+// Auth state
 auth.onAuthStateChanged(async (user) => {
   applyTheme();
   if (user) {
@@ -188,7 +187,6 @@ auth.onAuthStateChanged(async (user) => {
     if (cloud.isOn()){
       try { await cloud.pullAllOnce(); cloud.subscribeAll(); } catch (_) {}
     }
-
     resetIdleTimer();
     currentRoute = load('_route','home');
     renderApp();
@@ -199,24 +197,30 @@ auth.onAuthStateChanged(async (user) => {
   }
 });
 
-// --- Login / Logout (added Register + Forgot, removed Manager/Admin badge)
+// Part B — Login / Sidebar / Topbar / RenderApp / Sidebar search
+/* =========================
+   Part B — Layout & nav
+   ========================= */
+
+// Login
 function renderLogin() {
   const root = $('#root');
   root.innerHTML = `
     <div class="login">
       <div class="card login-card">
         <div class="card-body">
-          <div class="login-logo"><div class="logo">📦</div></div>
+          <div class="login-logo">
+            <div class="logo">📦</div>
+          </div>
           <h2 style="text-align:center;margin:6px 0 2px">Inventory</h2>
           <p class="login-note">Sign in with your email and password.</p>
+
           <div class="grid">
-            <input id="li-email" class="input" type="email" placeholder="Email" />
-            <input id="li-pass" class="input" type="password" placeholder="Password" />
-            <button id="btnLogin" class="btn">Sign In</button>
-          </div>
-          <div style="display:flex;justify-content:space-between;gap:8px;margin-top:10px">
-            <button id="btnRegister" class="btn ghost" style="flex:1"><i class="ri-user-add-line"></i> Register</button>
-            <button id="btnForgot" class="btn ghost" style="flex:1"><i class="ri-mail-send-line"></i> Forgot Password</button>
+            <input id="li-email" class="input" type="email" placeholder="Email" autocomplete="username" />
+            <input id="li-pass"  class="input" type="password" placeholder="Password" autocomplete="current-password" />
+            <button id="btnLogin"   class="btn">Sign In</button>
+            <button id="btnRegister"class="btn secondary">Register</button>
+            <button id="btnReset"   class="btn ghost">Forgot password</button>
           </div>
         </div>
       </div>
@@ -232,20 +236,20 @@ function renderLogin() {
   $('#btnRegister').onclick = async () => {
     const email = $('#li-email').value.trim();
     const pass  = $('#li-pass').value;
-    if (!email || !pass) { notify('Enter email & password to register','warn'); return; }
+    if (!email || !pass) { notify('Enter email & password','warn'); return; }
     try { await auth.createUserWithEmailAndPassword(email, pass); notify('Account created'); }
-    catch (e) { notify(e.message || 'Register failed','danger'); }
+    catch (e) { notify(e.message || 'Registration failed','danger'); }
   };
-  $('#btnForgot').onclick = async () => {
+  $('#btnReset').onclick = async () => {
     const email = $('#li-email').value.trim();
     if (!email) { notify('Enter your email first','warn'); return; }
-    try { await auth.sendPasswordResetEmail(email); notify('Reset email sent'); }
-    catch (e) { notify(e.message || 'Could not send reset link','danger'); }
+    try { await auth.sendPasswordResetEmail(email); notify('Password reset email sent'); }
+    catch (e) { notify(e.message || 'Could not send reset email','danger'); }
   };
 }
 async function doLogout(){ cloud.disable(); await auth.signOut(); notify('Signed out'); }
 
-// --- Sidebar + Topbar
+// Sidebar & Topbar
 function renderSidebar(active='home'){
   const links = [
     { route:'home',      icon:'ri-home-5-line',              label:'Home' },
@@ -257,11 +261,11 @@ function renderSidebar(active='home'){
     { route:'settings',  icon:'ri-settings-3-line',          label:'Settings' }
   ];
   const pages = [
-    { route:'policy',  icon:'ri-shield-check-line',       label:'Policy' },
-    { route:'license', icon:'ri-copyright-line',          label:'License' },
-    { route:'setup',   icon:'ri-guide-line',              label:'Setup Guide' },
-    { route:'contact', icon:'ri-customer-service-2-line', label:'Contact' },
-    { route:'guide',   icon:'ri-video-line',              label:'User Guide' },
+    { route:'policy',  icon:'ri-shield-check-line',    label:'Policy' },
+    { route:'license', icon:'ri-copyright-line',       label:'License' },
+    { route:'setup',   icon:'ri-guide-line',           label:'Setup Guide' },
+    { route:'contact', icon:'ri-mail-send-line',       label:'Contact' },
+    { route:'guide',   icon:'ri-video-line',           label:'User Guide' },
   ];
   return `
     <aside class="sidebar" id="sidebar">
@@ -293,11 +297,11 @@ function renderSidebar(active='home'){
 
       <h6>Social</h6>
       <div class="socials-row">
-        <a href="https://youtube.com" target="_blank" rel="noopener" title="YouTube"><i class="ri-youtube-fill"></i></a>
-        <a href="https://facebook.com" target="_blank" rel="noopener" title="Facebook"><i class="ri-facebook-fill"></i></a>
+        <a href="https://youtube.com"   target="_blank" rel="noopener" title="YouTube"><i class="ri-youtube-fill"></i></a>
+        <a href="https://facebook.com"  target="_blank" rel="noopener" title="Facebook"><i class="ri-facebook-fill"></i></a>
         <a href="https://instagram.com" target="_blank" rel="noopener" title="Instagram"><i class="ri-instagram-line"></i></a>
-        <a href="https://tiktok.com" target="_blank" rel="noopener" title="TikTok"><i class="ri-tiktok-fill"></i></a>
-        <a href="https://twitter.com" target="_blank" rel="noopener" title="X/Twitter"><i class="ri-twitter-x-line"></i></a>
+        <a href="https://tiktok.com"    target="_blank" rel="noopener" title="TikTok"><i class="ri-tiktok-fill"></i></a>
+        <a href="https://twitter.com"   target="_blank" rel="noopener" title="X/Twitter"><i class="ri-twitter-x-line"></i></a>
       </div>
     </aside>
   `;
@@ -318,9 +322,7 @@ function renderTopbar(){
   `;
 }
 
-// --- Global delegated listeners
-
-// Sidebar route clicks
+// Delegated sidebar clicks + delegated close modal
 document.addEventListener('click', (e)=>{
   const item = e.target.closest('.sidebar .item[data-route]');
   if (!item) return;
@@ -328,25 +330,14 @@ document.addEventListener('click', (e)=>{
   if (r) go(r);
 }, { passive: true });
 
-// Close modals
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-close]');
   if (!btn) return;
   const id = btn.getAttribute('data-close');
-  if (id) closeModal(id);
+  if (id) { closeModal(id); }
 }, { passive: true });
 
-// Delegated navigation for ANY element with data-go inside #main
-document.addEventListener('click', (e)=>{
-  const el = e.target.closest('[data-go]');
-  const main = $('#main');
-  if (!el || !main || !main.contains(el)) return;
-  const r  = el.getAttribute('data-go');
-  const id = el.getAttribute('data-id');
-  if (r) { go(r); if (id) setTimeout(()=> scrollToRow(id), 80); }
-}, { passive:true });
-
-// --- Render App
+// Render App
 function renderApp(){
   if (!session) { renderLogin(); return; }
   const root = $('#root');
@@ -374,26 +365,43 @@ function renderApp(){
 
   hookSidebarInteractions();
 
-  // Burger / backdrop / home / logout
+  // Topbar buttons
   $('#burger')?.addEventListener('click', openSidebar, { passive:true });
   $('#backdrop')?.addEventListener('click', closeSidebar, { passive:true });
   $('#btnHome')?.addEventListener('click', ()=> go('home'));
   $('#btnLogout')?.addEventListener('click', doLogout);
 
-  // Section wiring
+  // Make tiles navigate (including dashboard KPI tiles)
+  $$('.card.tile[data-go], .card[data-go]').forEach(el=>{
+    el.style.cursor = 'pointer';
+    el.onclick = ()=> { const r = el.getAttribute('data-go'); if (r) go(r); };
+  });
+
+  // Buttons inside main that navigate
+  $$('#main [data-go]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const r = btn.getAttribute('data-go'); const id = btn.getAttribute('data-id');
+      go(r);
+      if (id) setTimeout(()=> scrollToRow(id), 80);
+    };
+  });
+
+  // Wire sections
   if (currentRoute==='dashboard')  wireDashboard?.();
   if (currentRoute==='inventory')  wireInventory?.();
   if (currentRoute==='products')   wireProducts?.();
   if (currentRoute==='cogs')       wireCOGS?.();
   if (currentRoute==='tasks')      { wireTasks?.(); setupDnD?.(); }
   if (currentRoute==='settings')   wireSettings?.();
+  if (currentRoute==='contact')    wireContact?.();   // contact mailer
 
   enableMobileImagePreview?.();
 }
+
 function openSidebar(){ $('#sidebar')?.classList.add('open'); $('#backdrop')?.classList.add('active'); }
 function closeSidebar(){ $('#sidebar')?.classList.remove('open'); $('#backdrop')?.classList.remove('active'); }
 
-// --- Sidebar search
+// Search in sidebar
 function hookSidebarInteractions(){
   const input = $('#globalSearch');
   const results = $('#searchResults');
@@ -451,128 +459,103 @@ function hookSidebarInteractions(){
   });
 }
 
-// --- Views
+// Part C — Views: Home (hot weekly videos), Search, Dashboard (YoY/Prev‑Month), Posts
+/* =========================
+   Part C — Views (home/search/dashboard)
+   ========================= */
+
 const USD = x => `$${Number(x||0).toFixed(2)}`;
 
-/* ---------- HOME: tiles + weekly hot music video + mobile quick links ---------- */
+// --- Weekly "Hot" videos (public domain MP4s; auto-shuffle button)
 const HOT_VIDEOS = [
-  // Public sample MP4s (safe to autoplay muted on mobile)
-  { title:'Flower',  src:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',  poster:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.jpg' },
-  { title:'Bear',    src:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bear.mp4',    poster:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.jpg' },
-  { title:'Butterfly',src:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bee.mp4',     poster:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.jpg' }
+  // Short sample MP4s (public demo assets)
+  "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+  "https://media.w3.org/2010/05/sintel/trailer.mp4",
+  "https://media.w3.org/2010/05/bunny/trailer.mp4",
+  "https://media.w3.org/2010/05/video/movie_300.mp4"
 ];
-function pickWeeklyVideo(){
-  const d = new Date();
-  const oneJan = new Date(d.getFullYear(),0,1);
-  const week = Math.floor(((d - oneJan) / 86400000 + oneJan.getDay()+1) / 7); // ISO-ish week
-  return HOT_VIDEOS[week % HOT_VIDEOS.length];
+function weeklySeedIndex(){
+  const now = new Date();
+  // ISO week approx: year*52 + week
+  const week = Math.floor((now - new Date(now.getFullYear(),0,1)) / 604800000);
+  return Math.abs((now.getFullYear()*52 + week)) % HOT_VIDEOS.length;
 }
+
 function viewHome(){
-  const vid = pickWeeklyVideo();
+  const idx = weeklySeedIndex();
+  const pick = HOT_VIDEOS[idx];
   return `
     <div class="card">
       <div class="card-body">
         <h3 style="margin-top:0">Welcome 👋</h3>
-        <p style="color:var(--muted)">Pick a section to get started, or watch this week’s hot music video.</p>
+        <p style="color:var(--muted)">Pick a section to get started, or watch a quick intro.</p>
 
         <div class="grid cols-4 auto" style="margin-bottom:12px">
-          <div class="card tile" data-go="inventory">
-            <div class="card-body" style="display:flex;gap:10px;align-items:center"><i class="ri-archive-2-line"></i><div><div>Inventory</div></div></div>
-          </div>
-          <div class="card tile" data-go="products">
-            <div class="card-body" style="display:flex;gap:10px;align-items:center"><i class="ri-store-2-line"></i><div><div>Products</div></div></div>
-          </div>
-          <div class="card tile" data-go="cogs">
-            <div class="card-body" style="display:flex;gap:10px;align-items:center"><i class="ri-money-dollar-circle-line"></i><div><div>COGS</div></div></div>
-          </div>
-          <div class="card tile" data-go="tasks">
-            <div class="card-body" style="display:flex;gap:10px;align-items:center"><i class="ri-list-check-2"></i><div><div>Tasks</div></div></div>
-          </div>
+          <div class="card tile" data-go="inventory"><div class="card-body" style="display:flex;gap:10px;align-items:center"><i class="ri-archive-2-line"></i><div><div>Inventory</div></div></div></div>
+          <div class="card tile" data-go="products"><div class="card-body" style="display:flex;gap:10px;align-items:center"><i class="ri-store-2-line"></i><div><div>Products</div></div></div></div>
+          <div class="card tile" data-go="cogs"><div class="card-body" style="display:flex;gap:10px;align-items:center"><i class="ri-money-dollar-circle-line"></i><div><div>COGS</div></div></div></div>
+          <div class="card tile" data-go="tasks"><div class="card-body" style="display:flex;gap:10px;align-items:center"><i class="ri-list-check-2"></i><div><div>Tasks</div></div></div></div>
         </div>
 
         <div class="grid">
           <div class="card">
             <div class="card-body">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-                <h4 style="margin:0">Hot Weekly Music</h4>
-                <button id="shuffle-video" class="btn ghost"><i class="ri-shuffle-line"></i> Shuffle</button>
+                <h4 style="margin:0">Hot Weekly Video</h4>
+                <div>
+                  <button class="btn ghost" id="btnShuffle"><i class="ri-shuffle-line"></i> Shuffle</button>
+                </div>
               </div>
-              <video id="hot-video"
-                style="width:100%;border-radius:12px;border:1px solid var(--card-border)"
-                autoplay muted loop playsinline preload="metadata"
-                poster="${vid.poster}">
-                <source src="${vid.src}" type="video/mp4" />
+              <video id="hotVideo" style="width:100%;border-radius:12px;border:1px solid var(--card-border)" controls playsinline preload="metadata" muted poster="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.jpg">
+                <source src="${pick}" type="video/mp4" />
                 Your browser does not support HTML5 video.
               </video>
-              <div style="color:var(--muted);font-size:12px;margin-top:6px">
-                Tip: Tap the video to unmute on mobile if you want audio.
-              </div>
+              <div style="color:var(--muted);font-size:12px;margin-top:6px">Tip: On iPhone, press play (autoplay is blocked).</div>
             </div>
           </div>
-
-          <!-- Mobile quick links to make sure iPhone users see these easily -->
-          <div class="card mobile-only">
-            <div class="card-body">
-              <h4 style="margin:0 0 10px 0">Quick Links</h4>
-              <div class="grid cols-2">
-                <button class="btn" data-go="guide"><i class="ri-video-line"></i> User Guide</button>
-                <a class="btn secondary" href="https://youtube.com" target="_blank" rel="noopener"><i class="ri-youtube-fill"></i> YouTube</a>
-              </div>
-              <div style="display:flex;gap:8px;margin-top:10px">
-                <a class="btn ghost" href="https://facebook.com" target="_blank" rel="noopener"><i class="ri-facebook-fill"></i></a>
-                <a class="btn ghost" href="https://instagram.com" target="_blank" rel="noopener"><i class="ri-instagram-line"></i></a>
-                <a class="btn ghost" href="https://tiktok.com" target="_blank" rel="noopener"><i class="ri-tiktok-fill"></i></a>
-              </div>
-            </div>
-          </div>
-
         </div>
       </div>
     </div>
   `;
 }
 
-/* ------------- Search ------------- */
 function viewSearch(){
   const q = searchQuery || '';
   const index = buildSearchIndex();
   const out = q ? searchAll(index, q) : [];
   return `
-    <div class="card"><div class="card-body">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <h3 style="margin:0">Search</h3>
-        <div style="color:var(--muted)">Query: <strong>${q || '(empty)'}</strong></div>
+    <div class="card">
+      <div class="card-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="margin:0">Search</h3>
+          <div style="color:var(--muted)">Query: <strong>${q || '(empty)'}</strong></div>
+        </div>
+        ${out.length ? `
+          <div class="grid">
+            ${out.map(r => `
+              <div class="card">
+                <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
+                  <div>
+                    <div style="font-weight:700">${r.label}</div>
+                    <div style="color:var(--muted);font-size:12px">${r.section}</div>
+                  </div>
+                  <button class="btn" data-go="${r.route}" data-id="${r.id||''}">Open</button>
+                </div>
+              </div>`).join('')}
+          </div>` : `<p style="color:var(--muted)">No results.</p>`}
       </div>
-      ${out.length ? `
-        <div class="grid">
-          ${out.map(r => `
-            <div class="card" data-go="${r.route}" data-id="${r.id||''}">
-              <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
-                <div><div style="font-weight:700">${r.label}</div><div style="color:var(--muted);font-size:12px">${r.section}</div></div>
-                <button class="btn">Open</button>
-              </div>
-            </div>`).join('')}
-        </div>` : `<p style="color:var(--muted)">No results.</p>`}
-    </div></div>
+    </div>
   `;
 }
 
-/* ------------- Dashboard with MoM + YoY comparisons ------------- */
-function sumMonthGross(rows, year, monthIndex){
+// Dashboard KPIs + YoY & previous-month compare + Posts (Add Post)
+function sumGrossByMonth(rows, year, month){ // month: 0..11
   return rows
     .filter(r => {
-      const [y, m] = (r.date||'').split('-').map(x=>parseInt(x,10));
-      return y===year && (m-1)===monthIndex;
+      const d = new Date(r.date);
+      return d.getFullYear() === year && d.getMonth() === month;
     })
     .reduce((a,r)=> a + Number(r.grossIncome||0), 0);
-}
-function diffBadge(curr, prev){
-  const delta = curr - prev;
-  const pct = prev ? (delta/prev*100) : (curr ? 100 : 0);
-  const up = delta >= 0;
-  return `<span style="font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid ${up?'var(--ok)':'var(--danger)'};color:${up?'var(--ok)':'var(--danger)'}">
-    ${up?'<i class="ri-arrow-up-line"></i>':'<i class="ri-arrow-down-line"></i>'} ${Math.abs(pct).toFixed(1)}%
-  </span>`;
 }
 function viewDashboard(){
   const posts = load('posts', []);
@@ -580,73 +563,39 @@ function viewDashboard(){
   const prods = load('products', []);
   const users = load('users', []);
   const tasks = load('tasks', []);
-  const cogs  = load('cogs', []);
+  const rows  = load('cogs', []);
 
   const lowCt  = inv.filter(i => i.stock <= i.threshold && i.stock > Math.max(1, Math.floor(i.threshold*0.6))).length;
   const critCt = inv.filter(i => i.stock <= Math.max(1, Math.floor(i.threshold*0.6))).length;
 
-  // MoM & YoY for grossIncome
   const now = new Date();
-  const CY = now.getFullYear();
-  const CM = now.getMonth();       // 0-11
-  const PM = (CM+11)%12;           // previous month index
-  const PY = PM===11 ? CY-1 : CY;  // if wrap
+  const CY = now.getFullYear(); const CM = now.getMonth(); // 0..11
 
-  const currMonth  = sumMonthGross(cogs, CY, CM);
-  const prevMonth  = sumMonthGross(cogs, PY, PM);
-  const prevYearSM = sumMonthGross(cogs, CY-1, CM);
+  // YoY same calendar month
+  const yoyCurr = sumGrossByMonth(rows, CY, CM);
+  const yoyPrev = sumGrossByMonth(rows, CY-1, CM);
+
+  // Previous month (MoM)
+  const pmDate = new Date(CY, CM-1, 1);
+  const pmY = pmDate.getFullYear(), pmM = pmDate.getMonth();
+  const momCurr = sumGrossByMonth(rows, CY, CM);
+  const momPrev = sumGrossByMonth(rows, pmY, pmM);
+
+  const ratio = (a,b)=> b>0 ? ((a-b)/b*100).toFixed(1)+'%' : (a>0?'+∞%':'0%');
 
   return `
     <div class="grid cols-4 auto">
-      <div class="card tile" data-go="inventory"><div>Total Items</div><h2>${inv.length}</h2></div>
-      <div class="card tile" data-go="products"><div>Products</div><h2>${prods.length}</h2></div>
-      <div class="card tile" data-go="settings"><div>Users</div><h2>${users.length}</h2></div>
-      <div class="card tile" data-go="tasks"><div>Tasks</div><h2>${tasks.length}</h2></div>
+      <div class="card tile" data-go="inventory" style="cursor:pointer"><div>Total Items</div><h2>${inv.length}</h2></div>
+      <div class="card tile" data-go="products"  style="cursor:pointer"><div>Products</div><h2>${prods.length}</h2></div>
+      <div class="card tile" data-go="tasks"     style="cursor:pointer"><div>Tasks</div><h2>${tasks.length}</h2></div>
+      <div class="card tile" data-go="cogs"      style="cursor:pointer"><div>COGS</div><h2>${rows.length}</h2></div>
     </div>
 
     <div class="grid cols-4 auto" style="margin-top:12px">
-      <div class="card" data-go="inventory" style="border-left:4px solid var(--warn)">
-        <div class="card-body"><strong>Low stock</strong><div style="color:var(--muted)">${lowCt}</div></div>
-      </div>
-      <div class="card" data-go="inventory" style="border-left:4px solid var(--danger)">
-        <div class="card-body"><strong>Critical</strong><div style="color:var(--muted)">${critCt}</div></div>
-      </div>
-
-      <!-- Month-over-Month -->
-      <div class="card" data-go="cogs" style="border-left:4px solid var(--brand)">
-        <div class="card-body">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <strong>This Month vs Prev Month</strong>
-            ${diffBadge(currMonth, prevMonth)}
-          </div>
-          <div style="margin-top:6px">
-            <div style="font-size:12px;color:var(--muted)">This month</div>
-            <div style="font-weight:700">${USD(currMonth)}</div>
-          </div>
-          <div style="margin-top:4px">
-            <div style="font-size:12px;color:var(--muted)">Prev month</div>
-            <div>${USD(prevMonth)}</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Year-over-Year (same month last year) -->
-      <div class="card" data-go="cogs" style="border-left:4px solid var(--brand-2)">
-        <div class="card-body">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <strong>This Month vs ${CY-1}</strong>
-            ${diffBadge(currMonth, prevYearSM)}
-          </div>
-          <div style="margin-top:6px">
-            <div style="font-size:12px;color:var(--muted)">This month</div>
-            <div style="font-weight:700">${USD(currMonth)}</div>
-          </div>
-          <div style="margin-top:4px">
-            <div style="font-size:12px;color:var(--muted)">Same month ${CY-1}</div>
-            <div>${USD(prevYearSM)}</div>
-          </div>
-        </div>
-      </div>
+      <div class="card" style="border-left:4px solid var(--warn)"><div class="card-body"><strong>Low stock</strong><div style="color:var(--muted)">${lowCt}</div></div></div>
+      <div class="card" style="border-left:4px solid var(--danger)"><div class="card-body"><strong>Critical</strong><div style="color:var(--muted)">${critCt}</div></div></div>
+      <div class="card" data-go="cogs" style="cursor:pointer"><div class="card-body"><strong>YoY (${now.toLocaleString('default',{month:'short'})})</strong><div style="color:var(--muted)">${USD(yoyCurr)} vs ${USD(yoyPrev)} <span style="margin-left:6px">${ratio(yoyCurr,yoyPrev)}</span></div></div></div>
+      <div class="card" data-go="cogs" style="cursor:pointer"><div class="card-body"><strong>MoM</strong><div style="color:var(--muted)">${USD(momCurr)} vs ${USD(momPrev)} <span style="margin-left:6px">${ratio(momCurr,momPrev)}</span></div></div></div>
     </div>
 
     <div class="card" style="margin-top:16px">
@@ -678,25 +627,9 @@ function viewDashboard(){
     ${postModal()}
   `;
 }
-function wireDashboard(){
-  const addPostBtn = document.getElementById('addPost');
-  if (addPostBtn) addPostBtn.onclick = () => openModal('m-post');
 
-  // Home shuffle video
-  const shuffle = $('#shuffle-video');
-  if (shuffle) {
-    shuffle.onclick = ()=>{
-      const idx = Math.floor(Math.random()*HOT_VIDEOS.length);
-      const v = HOT_VIDEOS[idx];
-      const el = $('#hot-video');
-      if (!el) return;
-      el.pause();
-      el.setAttribute('poster', v.poster);
-      el.querySelector('source').src = v.src;
-      el.load();
-      el.play().catch(()=>{});
-    };
-  }
+function wireDashboard(){
+  $('#addPost')?.addEventListener('click', ()=> openModal('m-post'));
 }
 
 function wirePosts(){
@@ -737,487 +670,104 @@ function wirePosts(){
   });
 }
 
-/* ------------- Inventory / Products / COGS (with CSV export) ------------- */
+// Shuffle weekly video on Home
+document.addEventListener('click', (e)=>{
+  const btn = e.target.closest('#btnShuffle');
+  if (!btn) return;
+  const v = $('#hotVideo'); if (!v) return;
+  const next = HOT_VIDEOS[Math.floor(Math.random()*HOT_VIDEOS.length)];
+  const src = v.querySelector('source');
+  src.src = next;
+  v.load();
+  // Autoplay policy: try play, otherwise user will tap
+  v.play().catch(()=>{});
+});
+
+// Part D — Inventory / Products / COGS (with CSV export) / Tasks (free DnD)
+/* =========================
+   Part D — Main sections
+   ========================= */
+
+// CSV export helper
+function exportCSV(rows, filename){
+  if (!rows || !rows.length) { notify('Nothing to export','warn'); return; }
+  const headers = Object.keys(rows[0]);
+  const csv = [headers.join(',')]
+    .concat(rows.map(r => headers.map(h=>{
+      const val = r[h] ?? '';
+      const needsQuote = /[",\n]/.test(String(val));
+      return needsQuote ? `"${String(val).replace(/"/g,'""')}"` : val;
+    }).join(',')))
+    .join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Inventory
 function viewInventory(){
   const items = load('inventory', []);
   return `
-    <div class="card"><div class="card-body">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <h3 style="margin:0">Inventory</h3>
-        <div style="display:flex;gap:8px">
-          <button class="btn ghost" id="export-inv"><i class="ri-download-2-line"></i> Export CSV</button>
-          ${canCreate() ? `<button class="btn" id="addInv"><i class="ri-add-line"></i> Add Item</button>` : ''}
+    <div class="card">
+      <div class="card-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="margin:0">Inventory</h3>
+          <div style="display:flex;gap:8px">
+            <button class="btn ghost" id="export-inv"><i class="ri-download-2-line"></i> Export CSV</button>
+            ${canCreate() ? `<button class="btn" id="addInv"><i class="ri-add-line"></i> Add Item</button>` : ''}
+          </div>
+        </div>
+        <div class="table-wrap" data-section="inventory">
+          <table class="table">
+            <thead><tr>
+              <th>Image</th><th>Name</th><th>Code</th><th>Type</th><th>Price</th><th>Stock</th><th>Threshold</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+              ${items.map(it => {
+                const warnClass = it.stock <= it.threshold ? (it.stock <= Math.max(1, Math.floor(it.threshold*0.6)) ? 'tr-danger' : 'tr-warn') : '';
+                return `<tr id="${it.id}" class="${warnClass}">
+                  <td>
+                    <div class="thumb-wrap">
+                      ${it.img?`<img class="thumb inv-preview" data-src="${it.img}" alt=""/>`:`<div class="thumb inv-preview" data-src="icons/icon-512.png" style="display:grid;place-items:center">📦</div>`}
+                      <img class="thumb-large" src="${it.img||'icons/icon-512.png'}" alt=""/>
+                    </div>
+                  </td>
+                  <td>${it.name}</td>
+                  <td>${it.code}</td>
+                  <td>${it.type||'-'}</td>
+                  <td>${USD(it.price)}</td>
+                  <td>
+                    <button class="btn ghost" data-dec="${it.id}">–</button>
+                    <span style="padding:0 10px">${it.stock}</span>
+                    <button class="btn ghost" data-inc="${it.id}">+</button>
+                  </td>
+                  <td>
+                    <button class="btn ghost" data-dec-th="${it.id}">–</button>
+                    <span style="padding:0 10px">${it.threshold}</span>
+                    <button class="btn ghost" data-inc-th="${it.id}">+</button>
+                  </td>
+                  <td>
+                    ${canCreate() ? `
+                      <button class="btn ghost" data-edit="${it.id}"><i class="ri-edit-line"></i></button>
+                      <button class="btn danger" data-del="${it.id}"><i class="ri-delete-bin-6-line"></i></button>` : ''
+                    }
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
         </div>
       </div>
-      <div class="table-wrap" data-section="inventory">
-        <table class="table">
-          <thead><tr>
-            <th>Image</th><th>Name</th><th>Code</th><th>Type</th><th>Price</th><th>Stock</th><th>Threshold</th><th>Actions</th>
-          </tr></thead>
-          <tbody>
-            ${items.map(it => {
-              const warnClass = it.stock <= it.threshold ? (it.stock <= Math.max(1, Math.floor(it.threshold*0.6)) ? 'tr-danger' : 'tr-warn') : '';
-              return `<tr id="${it.id}" class="${warnClass}">
-                <td>
-                  <div class="thumb-wrap">
-                    ${it.img?`<img class="thumb inv-preview" data-src="${it.img}" alt=""/>`:`<div class="thumb inv-preview" data-src="icons/icon-512.png" style="display:grid;place-items:center">📦</div>`}
-                    <img class="thumb-large" src="${it.img||'icons/icon-512.png'}" alt=""/>
-                  </div>
-                </td>
-                <td>${it.name}</td>
-                <td>${it.code}</td>
-                <td>${it.type||'-'}</td>
-                <td>${USD(it.price)}</td>
-                <td>
-                  <button class="btn ghost" data-dec="${it.id}">–</button>
-                  <span style="padding:0 10px">${it.stock}</span>
-                  <button class="btn ghost" data-inc="${it.id}">+</button>
-                </td>
-                <td>
-                  <button class="btn ghost" data-dec-th="${it.id}">–</button>
-                  <span style="padding:0 10px">${it.threshold}</span>
-                  <button class="btn ghost" data-inc-th="${it.id}">+</button>
-                </td>
-                <td>
-                  ${canCreate() ? `
-                    <button class="btn ghost" data-edit="${it.id}"><i class="ri-edit-line"></i></button>
-                    <button class="btn danger" data-del="${it.id}"><i class="ri-delete-bin-6-line"></i></button>` : ''
-                  }
-                </td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div></div>
+    </div>
     ${invModal()}
     ${imgPreviewModal()}
   `;
 }
-
-function viewProducts(){
-  const items = load('products', []);
-  return `
-    <div class="card"><div class="card-body">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <h3 style="margin:0">Products</h3>
-        <div style="display:flex;gap:8px">
-          <button class="btn ghost" id="export-prod"><i class="ri-download-2-line"></i> Export CSV</button>
-          ${canCreate() ? `<button class="btn" id="addProd"><i class="ri-add-line"></i> Add Product</button>` : ''}
-        </div>
-      </div>
-      <div class="table-wrap" data-section="products">
-        <table class="table">
-          <thead><tr>
-            <th>Image</th><th>Name</th><th>Barcode</th><th>Price</th><th>Type</th><th>Actions</th>
-          </tr></thead>
-          <tbody>
-            ${items.map(it => `
-              <tr id="${it.id}">
-                <td>
-                  <div class="thumb-wrap">
-                    ${it.img?`<img class="thumb prod-thumb prod-preview" data-card="${it.id}" data-src="${it.img}" alt=""/>`:`<div class="thumb prod-thumb prod-preview" data-card="${it.id}" data-src="icons/icon-512.png" style="display:grid;place-items:center;cursor:pointer">🍣</div>`}
-                    <img class="thumb-large" src="${it.img||'icons/icon-512.png'}" alt=""/>
-                  </div>
-                </td>
-                <td>${it.name}</td>
-                <td>${it.barcode}</td>
-                <td>${USD(it.price)}</td>
-                <td>${it.type||'-'}</td>
-                <td>
-                  ${canCreate() ? `
-                    <button class="btn ghost" data-edit="${it.id}"><i class="ri-edit-line"></i></button>
-                    <button class="btn danger" data-del="${it.id}"><i class="ri-delete-bin-6-line"></i></button>` : ''
-                  }
-                </td>
-              </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div></div>
-    ${prodModal()}
-    ${prodCardModal()}
-    ${imgPreviewModal()}
-  `;
-}
-
-function viewCOGS(){
-  const rows = load('cogs', []);
-  const totals = rows.reduce((a,r)=>({
-    grossIncome:a.grossIncome+r.grossIncome,
-    produceCost:a.produceCost+r.produceCost,
-    itemCost:a.itemCost+r.itemCost,
-    freight:a.freight+r.freight,
-    delivery:a.delivery+r.delivery,
-    other:a.other+r.other
-  }),{grossIncome:0,produceCost:0,itemCost:0,freight:0,delivery:0,other:0});
-  const grossProfit = (r)=> r.grossIncome - (r.produceCost+r.itemCost+r.freight+r.delivery+r.other);
-  const totalProfit = grossProfit(totals);
-
-  return `
-    <div class="card"><div class="card-body">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <h3 style="margin:0">COGS</h3>
-        <div style="display:flex;gap:8px">
-          <button class="btn ghost" id="export-cogs"><i class="ri-download-2-line"></i> Export CSV</button>
-          ${canCreate() ? `<button class="btn" id="addCOGS"><i class="ri-add-line"></i> Add Row</button>` : ''}
-        </div>
-      </div>
-      <div class="table-wrap" data-section="cogs">
-        <table class="table">
-          <thead><tr>
-            <th>Date</th><th>Gross Income</th><th>Produce Cost</th><th>Item Cost</th>
-            <th>Freight</th><th>Delivery</th><th>Other</th><th>Gross Profit</th><th>Actions</th>
-          </tr></thead>
-          <tbody>
-            ${rows.map(r=>`
-              <tr id="${r.id}">
-                <td>${r.date}</td>
-                <td>${USD(r.grossIncome)}</td>
-                <td>${USD(r.produceCost)}</td>
-                <td>${USD(r.itemCost)}</td>
-                <td>${USD(r.freight)}</td>
-                <td>${USD(r.delivery)}</td>
-                <td>${USD(r.other)}</td>
-                <td>${USD(grossProfit(r))}</td>
-                <td>
-                  ${canCreate() ? `
-                    <button class="btn ghost" data-edit="${r.id}"><i class="ri-edit-line"></i></button>
-                    <button class="btn danger" data-del="${r.id}"><i class="ri-delete-bin-6-line"></i></button>` : ''
-                  }
-                </td>
-              </tr>`).join('')}
-            <tr class="tr-total">
-              <th>Total</th>
-              <th>${USD(totals.grossIncome)}</th>
-              <th>${USD(totals.produceCost)}</th>
-              <th>${USD(totals.itemCost)}</th>
-              <th>${USD(totals.freight)}</th>
-              <th>${USD(totals.delivery)}</th>
-              <th>${USD(totals.other)}</th>
-              <th>${USD(totalProfit)}</th>
-              <th></th>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div></div>
-    ${cogsModal()}
-  `;
-}
-
-/* ------------- Tasks (DnD with empty-lane drop) ------------- */
-function viewTasks(){
-  const items = load('tasks', []);
-  const lane = (key, label, color)=>`
-    <div class="card lane-row" data-lane="${key}">
-      <div class="card-body">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <h3 style="margin:0;color:${color}">${label}</h3>
-          ${key==='todo' && canCreate()? `<button class="btn" id="addTask"><i class="ri-add-line"></i> Add Task</button>`:''}
-        </div>
-        <div class="grid lane-grid" id="lane-${key}">
-          <div class="lane-dropzone" data-dropzone="${key}"></div>
-          ${items.filter(t=>t.status===key).map(t=>`
-            <div class="card task-card" id="${t.id}" draggable="true" data-task="${t.id}">
-              <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
-                <div>${t.title}</div>
-                <div>
-                  ${canCreate() ? `
-                    <button class="btn ghost" data-edit="${t.id}"><i class="ri-edit-line"></i></button>
-                    <button class="btn danger" data-del="${t.id}"><i class="ri-delete-bin-6-line"></i></button>` : ''
-                  }
-                </div>
-              </div>
-            </div>`).join('')}
-        </div>
-      </div>
-    </div>
-  `;
-  return `
-    <div data-section="tasks">
-      ${lane('todo','To do','#f59e0b')}
-      ${lane('inprogress','In progress','#3b82f6')}
-      ${lane('done','Done','#10b981')}
-    </div>
-    ${taskModal()}
-  `;
-}
-
-/* ------------- Settings ------------- */
-function viewSettings(){
-  const users = load('users', []);
-  const theme = getTheme();
-  const cloudOn = cloud.isOn();
-
-  return `
-    <div class="grid">
-      <div class="card"><div class="card-body">
-        <h3 style="margin-top:0">Cloud Sync</h3>
-        <p style="color:var(--muted)">Store your data in Firebase RTDB to use it on any device. Local-first; works offline.</p>
-        <div class="theme-inline">
-          <div>
-            <label style="font-size:12px;color:var(--muted)">Status</label>
-            <select id="cloud-toggle" class="input">
-              <option value="off" ${!cloudOn?'selected':''}>Off</option>
-              <option value="on"  ${cloudOn?'selected':''}>On</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--muted)">Actions</label><br/>
-            <button class="btn" id="cloud-sync-now"><i class="ri-cloud-line"></i> Sync Now</button>
-          </div>
-        </div>
-      </div></div>
-
-      <div class="card"><div class="card-body">
-        <h3 style="margin-top:0">Theme</h3>
-        <div class="theme-inline">
-          <div>
-            <label style="font-size:12px;color:var(--muted)">Mode</label>
-            <select id="theme-mode" class="input">
-              ${THEME_MODES.map(m=>`<option value="${m.key}" ${theme.mode===m.key?'selected':''}>${m.name}</option>`).join('')}
-            </select>
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--muted)">Font Size</label>
-            <select id="theme-size" class="input">
-              ${THEME_SIZES.map(s=>`<option value="${s.key}" ${theme.size===s.key?'selected':''}>${s.label}</option>`).join('')}
-            </select>
-          </div>
-        </div>
-      </div></div>
-
-      <div class="card"><div class="card-body">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <h3 style="margin:0">Users</h3>
-          ${canManage()? `<button class="btn" id="addUser"><i class="ri-add-line"></i> Add User</button>`:''}
-        </div>
-        <table class="table" data-section="users">
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr></thead>
-          <tbody>
-            ${users.map(u=>`
-              <tr id="${u.email}">
-                <td>${u.name}</td>
-                <td>${u.email}</td>
-                <td>${u.role}</td>
-                <td>
-                  ${canManage()? `
-                    <button class="btn ghost" data-edit="${u.email}"><i class="ri-edit-line"></i></button>
-                    <button class="btn danger" data-del="${u.email}"><i class="ri-delete-bin-6-line"></i></button>` : ''
-                  }
-                </td>
-              </tr>`).join('')}
-          </tbody>
-        </table>
-      </div></div>
-    </div>
-
-    ${userModal()}
-  `;
-}
-
-/* ------------- Static Pages container ------------- */
-const pageContent = {
-  policy: `<h3>Policy</h3>
-    <div style="border:1px solid var(--card-border);border-radius:12px;overflow:hidden">
-      <iframe src="policy.html" style="width:100%;height:calc(100vh - 220px);border:none"></iframe>
-    </div>`,
-  license:`<h3>License</h3>
-    <div style="border:1px solid var(--card-border);border-radius:12px;overflow:hidden">
-      <iframe src="license.html" style="width:100%;height:calc(100vh - 220px);border:none"></iframe>
-    </div>`,
-  setup:  `<h3>Setup Guide</h3>
-    <div style="border:1px solid var(--card-border); border-radius:12px; overflow:hidden;">
-      <iframe src="setup-guide.html" style="width:100%; height: calc(100vh - 220px); border:none;"></iframe>
-    </div>`,
-  contact:`<h3>Contact</h3>
-    <p>Got a question? Send us a message.</p>
-    <div class="grid cols-2">
-      <input id="ct-name" class="input" placeholder="Your name" />
-      <input id="ct-email" class="input" type="email" placeholder="Your email" />
-    </div>
-    <textarea id="ct-msg" class="input" rows="5" placeholder="Message"></textarea>
-    <div style="display:flex;justify-content:flex-end;margin-top:10px">
-      <button id="ct-send" class="btn"><i class="ri-send-plane-line"></i> Send</button>
-    </div>`,
-  guide:`<h3>User Guide</h3>
-    <div style="border:1px solid var(--card-border);border-radius:12px;overflow:hidden">
-      <iframe src="guide.html" style="width:100%;height:calc(100vh - 220px);border:none"></iframe>
-    </div>`
-};
-function viewPage(key){ return `<div class="card"><div class="card-body">${pageContent[key]||'<p>Page</p>'}</div></div>`; }
-
-/* ------------- Permissions ------------- */
-function canManage(){ return session && (session.role==='admin' || session.role==='manager'); }
-function canCreate(){ return session && (session.role==='admin' || session.role==='manager'); }
-
-/* ------------- Modals ------------- */
-function postModal(){ if (!canCreate()) return ''; return `
-  <div class="modal-backdrop" id="mb-post"></div>
-  <div class="modal" id="m-post">
-    <div class="dialog">
-      <div class="head"><strong>Post</strong><button class="btn ghost" data-close="m-post">Close</button></div>
-      <div class="body grid">
-        <input id="post-id" type="hidden" />
-        <input id="post-title" class="input" placeholder="Title" />
-        <textarea id="post-body" class="input" placeholder="Body"></textarea>
-        <input id="post-img" class="input" placeholder="Image URL (optional)" />
-      </div>
-      <div class="foot"><button class="btn" id="save-post">Save</button></div>
-    </div>
-  </div>`; }
-function invModal(){ if (!canCreate()) return ''; return `
-  <div class="modal-backdrop" id="mb-inv"></div>
-  <div class="modal" id="m-inv">
-    <div class="dialog">
-      <div class="head"><strong>Inventory Item</strong><button class="btn ghost" data-close="m-inv">Close</button></div>
-      <div class="body grid">
-        <input id="inv-id" type="hidden" />
-        <input id="inv-name" class="input" placeholder="Name" />
-        <input id="inv-code" class="input" placeholder="Code" />
-        <select id="inv-type" class="input"><option>Raw</option><option>Cooked</option><option>Dry</option><option>Other</option></select>
-        <input id="inv-price" class="input" type="number" step="0.01" placeholder="Price" />
-        <input id="inv-stock" class="input" type="number" placeholder="Stock" />
-        <input id="inv-threshold" class="input" type="number" placeholder="Threshold" />
-        <input id="inv-img" class="input" placeholder="Image URL (optional)" />
-      </div>
-      <div class="foot"><button class="btn" id="save-inv">Save</button></div>
-    </div>
-  </div>`; }
-function prodModal(){ if (!canCreate()) return ''; return `
-  <div class="modal-backdrop" id="mb-prod"></div>
-  <div class="modal" id="m-prod">
-    <div class="dialog">
-      <div class="head"><strong>Product</strong><button class="btn ghost" data-close="m-prod">Close</button></div>
-      <div class="body grid">
-        <input id="prod-id" type="hidden" />
-        <input id="prod-name" class="input" placeholder="Name" />
-        <input id="prod-barcode" class="input" placeholder="Barcode" />
-        <input id="prod-price" class="input" type="number" step="0.01" placeholder="Price" />
-        <input id="prod-type" class="input" placeholder="Type" />
-        <textarea id="prod-ingredients" class="input" placeholder="Ingredients"></textarea>
-        <textarea id="prod-instructions" class="input" placeholder="Instructions"></textarea>
-        <input id="prod-img" class="input" placeholder="Image URL (optional)" />
-      </div>
-      <div class="foot"><button class="btn" id="save-prod">Save</button></div>
-    </div>
-  </div>`; }
-function prodCardModal(){ return `
-  <div class="modal-backdrop" id="mb-card"></div>
-  <div class="modal" id="m-card">
-    <div class="dialog">
-      <div class="head"><strong id="pc-name">Product</strong><button class="btn ghost" data-close="m-card">Close</button></div>
-      <div class="body grid cols-2">
-        <div><img id="pc-img" style="width:100%;border-radius:12px;border:1px solid var(--card-border)" /></div>
-        <div class="grid">
-          <div><strong>Barcode:</strong> <span id="pc-barcode"></span></div>
-          <div><strong>Price:</strong> <span id="pc-price"></span></div>
-          <div><strong>Type:</strong> <span id="pc-type"></span></div>
-          <div><strong>Ingredients:</strong><div id="pc-ingredients"></div></div>
-          <div><strong>Instructions:</strong><div id="pc-instructions"></div></div>
-        </div>
-      </div>
-    </div>
-  </div>`; }
-function cgs(v){ return Number(v||0).toFixed(2); }
-function cogsModal(){ if (!canCreate()) return ''; return `
-  <div class="modal-backdrop" id="mb-cogs"></div>
-  <div class="modal" id="m-cogs">
-    <div class="dialog">
-      <div class="head"><strong>COGS Row</strong><button class="btn ghost" data-close="m-cogs">Close</button></div>
-      <div class="body grid cols-2">
-        <input id="cogs-id" type="hidden" />
-        <input id="cogs-date" class="input" type="date" />
-        <input id="cogs-grossIncome" class="input" type="number" step="0.01" placeholder="Gross Income" />
-        <input id="cogs-produceCost" class="input" type="number" step="0.01" placeholder="Produce Cost" />
-        <input id="cogs-itemCost" class="input" type="number" step="0.01" placeholder="Item Cost" />
-        <input id="cogs-freight" class="input" type="number" step="0.01" placeholder="Freight" />
-        <input id="cogs-delivery" class="input" type="number" step="0.01" placeholder="Delivery" />
-        <input id="cogs-other" class="input" type="number" step="0.01" placeholder="Other" />
-      </div>
-      <div class="foot"><button class="btn" id="save-cogs">Save</button></div>
-    </div>
-  </div>`; }
-function taskModal(){ if (!canCreate()) return ''; return `
-  <div class="modal-backdrop" id="mb-task"></div>
-  <div class="modal" id="m-task">
-    <div class="dialog">
-      <div class="head"><strong>Task</strong><button class="btn ghost" data-close="m-task">Close</button></div>
-      <div class="body grid">
-        <input id="task-id" type="hidden" />
-        <input id="task-title" class="input" placeholder="Title" />
-        <select id="task-status"><option value="todo">To do</option><option value="inprogress">In progress</option><option value="done">Done</option></select>
-      </div>
-      <div class="foot"><button class="btn" id="save-task">Save</button></div>
-    </div>
-  </div>`; }
-function userModal(){ if (!canManage()) return ''; return `
-  <div class="modal-backdrop" id="mb-user"></div>
-  <div class="modal" id="m-user">
-    <div class="dialog">
-      <div class="head"><strong>User</strong><button class="btn ghost" data-close="m-user">Close</button></div>
-      <div class="body grid">
-        <input id="user-name" class="input" placeholder="Name" />
-        <input id="user-email" class="input" type="email" placeholder="Email" />
-        <input id="user-username" class="input" placeholder="Username" />
-        <select id="user-role"><option value="user">User</option><option value="manager">Manager</option><option value="admin">Admin</option></select>
-        <input id="user-img" class="input" placeholder="Image URL (optional)" />
-      </div>
-      <div class="foot"><button class="btn" id="save-user">Save</button></div>
-    </div>
-  </div>`; }
-
-/* ------------- Image preview (phones) ------------- */
-function imgPreviewModal(){ return `
-  <div class="modal-backdrop" id="mb-img"></div>
-  <div class="modal img-modal" id="m-img">
-    <div class="dialog">
-      <div class="head"><strong>Preview</strong><button class="btn ghost" data-close="m-img">Close</button></div>
-      <div class="body"><div class="imgbox"><img id="preview-img" src="" alt="Preview"/></div></div>
-    </div>
-  </div>`; }
-function openImg(src){ const img = $('#preview-img'); if (!img) return; img.src = src || 'icons/icon-512.png'; openModal('m-img'); }
-
-/* ------------- Modal helpers ------------- */
-function openModal(id){ $('#'+id)?.classList.add('active'); $('#mb-'+id.split('-')[1])?.classList.add('active'); }
-function closeModal(id){ $('#'+id)?.classList.remove('active'); $('#mb-'+id.split('-')[1])?.classList.remove('active'); }
-
-/* ------------- Export helpers ------------- */
-function csvEscape(v){ return `"${String(v ?? '').replace(/"/g,'""')}"`; }
-function toCSV(headers, rows){
-  const head = headers.map(h=>csvEscape(h.label)).join(',');
-  const body = rows.map(r => headers.map(h => {
-    const val = typeof h.value === 'function' ? h.value(r) : (h.key ? r[h.key] : '');
-    return csvEscape(val);
-  }).join(',')).join('\n');
-  return head + '\n' + body;
-}
-function download(filename, text){
-  const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(text);
-  a.download = filename;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-}
-
-/* ------------- Wiring sections ------------- */
 function wireInventory(){
   if ($('#addInv')) $('#addInv').onclick = ()=> openModal('m-inv');
+  $('#export-inv')?.addEventListener('click', ()=> exportCSV(load('inventory',[]), 'inventory.csv'));
   const sec = $('[data-section="inventory"]'); if (!sec) return;
-
-  // Export CSV
-  $('#export-inv')?.addEventListener('click', ()=>{
-    const items = load('inventory', []);
-    const headers = [
-      { label:'Name', key:'name' },
-      { label:'Code', key:'code' },
-      { label:'Type', key:'type' },
-      { label:'Price', value: r => Number(r.price||0).toFixed(2) },
-      { label:'Stock', key:'stock' },
-      { label:'Threshold', key:'threshold' },
-    ];
-    download('inventory.csv', toCSV(headers, items));
-  });
 
   $('#save-inv')?.addEventListener('click', ()=>{
     const items = load('inventory', []);
@@ -1281,23 +831,58 @@ function wireInventory(){
   });
 }
 
+// Products
+function viewProducts(){
+  const items = load('products', []);
+  return `
+    <div class="card">
+      <div class="card-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="margin:0">Products</h3>
+          <div style="display:flex;gap:8px">
+            <button class="btn ghost" id="export-prods"><i class="ri-download-2-line"></i> Export CSV</button>
+            ${canCreate() ? `<button class="btn" id="addProd"><i class="ri-add-line"></i> Add Product</button>` : ''}
+          </div>
+        </div>
+        <div class="table-wrap" data-section="products">
+          <table class="table">
+            <thead><tr>
+              <th>Image</th><th>Name</th><th>Barcode</th><th>Price</th><th>Type</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+              ${items.map(it => `
+                <tr id="${it.id}">
+                  <td>
+                    <div class="thumb-wrap">
+                      ${it.img?`<img class="thumb prod-thumb prod-preview" data-card="${it.id}" data-src="${it.img}" alt=""/>`:`<div class="thumb prod-thumb prod-preview" data-card="${it.id}" data-src="icons/icon-512.png" style="display:grid;place-items:center;cursor:pointer">🍣</div>`}
+                      <img class="thumb-large" src="${it.img||'icons/icon-512.png'}" alt=""/>
+                    </div>
+                  </td>
+                  <td>${it.name}</td>
+                  <td>${it.barcode}</td>
+                  <td>${USD(it.price)}</td>
+                  <td>${it.type||'-'}</td>
+                  <td>
+                    ${canCreate() ? `
+                      <button class="btn ghost" data-edit="${it.id}"><i class="ri-edit-line"></i></button>
+                      <button class="btn danger" data-del="${it.id}"><i class="ri-delete-bin-6-line"></i></button>` : ''
+                    }
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    ${prodModal()}
+    ${prodCardModal()}
+    ${imgPreviewModal()}
+  `;
+}
 function wireProducts(){
+  $('#export-prods')?.addEventListener('click', ()=> exportCSV(load('products',[]), 'products.csv'));
   if ($('#addProd')) $('#addProd').onclick = ()=> openModal('m-prod');
   const sec = $('[data-section="products"]'); if (!sec) return;
-
-  // Export CSV
-  $('#export-prod')?.addEventListener('click', ()=>{
-    const items = load('products', []);
-    const headers = [
-      { label:'Name', key:'name' },
-      { label:'Barcode', key:'barcode' },
-      { label:'Price', value: r => Number(r.price||0).toFixed(2) },
-      { label:'Type', key:'type' },
-      { label:'Ingredients', key:'ingredients' },
-      { label:'Instructions', key:'instructions' },
-    ];
-    download('products.csv', toCSV(headers, items));
-  });
 
   $('#save-prod')?.addEventListener('click', ()=>{
     const items = load('products', []);
@@ -1358,30 +943,83 @@ function enableMobileImagePreview(){
     el.style.cursor = 'pointer';
     el.addEventListener('click', ()=>{
       const src = el.getAttribute('data-src') || 'icons/icon-512.png';
-      openImg(src);
+      const img = $('#preview-img'); if (!img) return;
+      img.src = src; openModal('m-img');
     });
   });
 }
 
+// COGS
+function viewCOGS(){
+  const rows = load('cogs', []);
+  const totals = rows.reduce((a,r)=>({
+    grossIncome:a.grossIncome+r.grossIncome,
+    produceCost:a.produceCost+r.produceCost,
+    itemCost:a.itemCost+r.itemCost,
+    freight:a.freight+r.freight,
+    delivery:a.delivery+r.delivery,
+    other:a.other+r.other
+  }),{grossIncome:0,produceCost:0,itemCost:0,freight:0,delivery:0,other:0});
+  const grossProfit = (r)=> r.grossIncome - (r.produceCost+r.itemCost+r.freight+r.delivery+r.other);
+  const totalProfit = grossProfit(totals);
+
+  return `
+    <div class="card">
+      <div class="card-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="margin:0">COGS</h3>
+          <div style="display:flex;gap:8px">
+            <button class="btn ghost" id="export-cogs"><i class="ri-download-2-line"></i> Export CSV</button>
+            ${canCreate() ? `<button class="btn" id="addCOGS"><i class="ri-add-line"></i> Add Row</button>` : ''}
+          </div>
+        </div>
+        <div class="table-wrap" data-section="cogs">
+          <table class="table">
+            <thead><tr>
+              <th>Date</th><th>Gross Income</th><th>Produce Cost</th><th>Item Cost</th>
+              <th>Freight</th><th>Delivery</th><th>Other</th><th>Gross Profit</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+              ${rows.map(r=>`
+                <tr id="${r.id}">
+                  <td>${r.date}</td>
+                  <td>${USD(r.grossIncome)}</td>
+                  <td>${USD(r.produceCost)}</td>
+                  <td>${USD(r.itemCost)}</td>
+                  <td>${USD(r.freight)}</td>
+                  <td>${USD(r.delivery)}</td>
+                  <td>${USD(r.other)}</td>
+                  <td>${USD(grossProfit(r))}</td>
+                  <td>
+                    ${canCreate() ? `
+                      <button class="btn ghost" data-edit="${r.id}"><i class="ri-edit-line"></i></button>
+                      <button class="btn danger" data-del="${r.id}"><i class="ri-delete-bin-6-line"></i></button>` : ''
+                    }
+                  </td>
+                </tr>`).join('')}
+              <tr class="tr-total">
+                <th>Total</th>
+                <th>${USD(totals.grossIncome)}</th>
+                <th>${USD(totals.produceCost)}</th>
+                <th>${USD(totals.itemCost)}</th>
+                <th>${USD(totals.freight)}</th>
+                <th>${USD(totals.delivery)}</th>
+                <th>${USD(totals.other)}</th>
+                <th>${USD(totalProfit)}</th>
+                <th></th>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    ${cogsModal()}
+  `;
+}
 function wireCOGS(){
+  $('#export-cogs')?.addEventListener('click', ()=> exportCSV(load('cogs',[]), 'cogs.csv'));
   if ($('#addCOGS')) $('#addCOGS').onclick = ()=> openModal('m-cogs');
   const sec = $('[data-section="cogs"]'); if (!sec) return;
-
-  // Export CSV
-  $('#export-cogs')?.addEventListener('click', ()=>{
-    const rows = load('cogs', []);
-    const headers = [
-      { label:'Date', key:'date' },
-      { label:'Gross Income', value: r => Number(r.grossIncome||0).toFixed(2) },
-      { label:'Produce Cost', value: r => Number(r.produceCost||0).toFixed(2) },
-      { label:'Item Cost',    value: r => Number(r.itemCost||0).toFixed(2) },
-      { label:'Freight',      value: r => Number(r.freight||0).toFixed(2) },
-      { label:'Delivery',     value: r => Number(r.delivery||0).toFixed(2) },
-      { label:'Other',        value: r => Number(r.other||0).toFixed(2) },
-      { label:'Gross Profit', value: r => (Number(r.grossIncome||0) - (Number(r.produceCost||0)+Number(r.itemCost||0)+Number(r.freight||0)+Number(r.delivery||0)+Number(r.other||0))).toFixed(2) },
-    ];
-    download('cogs.csv', toCSV(headers, rows));
-  });
 
   $('#save-cogs')?.addEventListener('click', ()=>{
     const rows = load('cogs', []);
@@ -1418,23 +1056,55 @@ function wireCOGS(){
   });
 }
 
-/* ------------- Tasks DnD (empty lanes OK) ------------- */
+// Tasks — lanes accept drops even if empty (free movement anywhere)
+function viewTasks(){
+  const items = load('tasks', []);
+  const lane = (key, label, color)=>`
+    <div class="card lane-row" data-lane="${key}">
+      <div class="card-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="margin:0;color:${color}">${label}</h3>
+          ${key==='todo' && canCreate()? `<button class="btn" id="addTask"><i class="ri-add-line"></i> Add Task</button>`:''}
+        </div>
+        <div class="grid lane-grid" id="lane-${key}">
+          <div class="lane-dropzone" data-dropzone="${key}"></div>
+          ${items.filter(t=>t.status===key).map(t=>`
+            <div class="card task-card" id="${t.id}" draggable="true" data-task="${t.id}">
+              <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
+                <div>${t.title}</div>
+                <div>
+                  ${canCreate() ? `
+                    <button class="btn ghost" data-edit="${t.id}"><i class="ri-edit-line"></i></button>
+                    <button class="btn danger" data-del="${t.id}"><i class="ri-delete-bin-6-line"></i></button>` : ''
+                  }
+                </div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+  return `
+    <div data-section="tasks">
+      ${lane('todo','To do','#f59e0b')}
+      ${lane('inprogress','In progress','#3b82f6')}
+      ${lane('done','Done','#10b981')}
+    </div>
+    ${taskModal()}
+  `;
+}
 function setupDnD(){
   const lanes = ['todo','inprogress','done'];
-  const allow = {
-    'todo':       new Set(['inprogress','done']),
-    'inprogress': new Set(['todo','done']),
-    'done':       new Set(['todo','inprogress'])
-  };
+  const allow = { 'todo':new Set(['inprogress','done']), 'inprogress':new Set(['todo','done']), 'done':new Set(['todo','inprogress']) };
 
+  // make every card draggable
   $$('[data-task]').forEach(card=>{
-    card.ondragstart = (e)=> {
-      e.dataTransfer.setData('text/plain', card.getAttribute('data-task'));
-    };
+    card.ondragstart = (e)=> { e.dataTransfer.setData('text/plain', card.getAttribute('data-task')); };
   });
 
   lanes.forEach(k=>{
     const laneGrid = $('#lane-'+k);
+    const dropzone = document.querySelector(`.lane-dropzone[data-dropzone="${k}"]`);
     const parentCard = laneGrid?.closest('.lane-row');
 
     const over = (e)=>{
@@ -1457,10 +1127,16 @@ function setupDnD(){
     };
 
     if (laneGrid){
-      laneGrid.ondragover  = over;
+      laneGrid.ondragover = over;
       laneGrid.ondragenter = (e)=> e.preventDefault();
       laneGrid.ondragleave = leave;
-      laneGrid.ondrop      = drop;
+      laneGrid.ondrop = drop;
+    }
+    if (dropzone){
+      dropzone.ondragover = over;
+      dropzone.ondragenter = (e)=> e.preventDefault();
+      dropzone.ondragleave = leave;
+      dropzone.ondrop = drop;
     }
   });
 }
@@ -1490,11 +1166,140 @@ function wireTasks(){
   });
 }
 
-/* ------------- Users ------------- */
-function wireUsers(){
+// Part E — Settings / Users / Contact / Static pages + Modals + helpers
+/* =========================
+   Part E — Settings, Users, Contact, Pages, Modals
+   ========================= */
+
+// Settings view
+function viewSettings(){
+  const users = load('users', []);
+  const theme = getTheme();
+  const cloudOn = cloud.isOn();
+
+  return `
+    <div class="grid">
+      <div class="card">
+        <div class="card-body">
+          <h3 style="margin-top:0">Cloud Sync</h3>
+          <p style="color:var(--muted)">Store your data in Firebase RTDB. Local-first; works offline.</p>
+          <div class="theme-inline">
+            <div>
+              <label style="font-size:12px;color:var(--muted)">Status</label>
+              <select id="cloud-toggle" class="input">
+                <option value="off" ${!cloudOn?'selected':''}>Off</option>
+                <option value="on"  ${cloudOn?'selected':''}>On</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--muted)">Actions</label><br/>
+              <button class="btn" id="cloud-sync-now"><i class="ri-cloud-line"></i> Sync Now</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <h3 style="margin-top:0">Theme</h3>
+          <div class="theme-inline">
+            <div>
+              <label style="font-size:12px;color:var(--muted)">Mode</label>
+              <select id="theme-mode" class="input">
+                ${THEME_MODES.map(m=>`<option value="${m.key}" ${theme.mode===m.key?'selected':''}>${m.name}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--muted)">Font Size</label>
+              <select id="theme-size" class="input">
+                ${THEME_SIZES.map(s=>`<option value="${s.key}" ${theme.size===s.key?'selected':''}>${s.label}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <h3 style="margin:0">Users</h3>
+            ${canManage()? `<button class="btn" id="addUser"><i class="ri-add-line"></i> Add User</button>`:''}
+          </div>
+          <table class="table" data-section="users">
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr></thead>
+            <tbody>
+              ${users.map(u=>`
+                <tr id="${u.email}">
+                  <td>${u.name}</td>
+                  <td>${u.email}</td>
+                  <td>${u.role}</td>
+                  <td>
+                    ${canManage()? `
+                      <button class="btn ghost" data-edit="${u.email}"><i class="ri-edit-line"></i></button>
+                      <button class="btn danger" data-del="${u.email}"><i class="ri-delete-bin-6-line"></i></button>` : ''
+                    }
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    ${userModal()}
+  `;
+}
+function wireSettings(){
+  // Theme instant apply
+  const mode = $('#theme-mode'); const size = $('#theme-size');
+  if (mode && size){
+    const apply = ()=>{
+      const t = { mode: mode.value, size: size.value };
+      save('_theme2', t); applyTheme(); renderApp();
+    };
+    mode.onchange = apply; size.onchange = apply;
+  }
+  // Cloud controls
+  const toggle  = $('#cloud-toggle');
+  const syncNow = $('#cloud-sync-now');
+  if (toggle){
+    toggle.addEventListener('change', async (e)=>{
+      const val = e.target.value;
+      try {
+        if (val === 'on'){
+          if (!auth.currentUser){ notify('Sign in first.','warn'); toggle.value='off'; return; }
+          await firebase.database().goOnline();
+          await cloud.enable();
+          notify('Cloud Sync ON');
+        } else {
+          cloud.disable();
+          await firebase.database().goOffline();
+          notify('Cloud Sync OFF');
+        }
+      } catch(err){
+        notify(err?.message || 'Could not change sync','danger');
+        toggle.value = cloud.isOn() ? 'on' : 'off';
+      }
+    });
+  }
+  if (syncNow){
+    syncNow.addEventListener('click', async ()=>{
+      try{
+        if (!auth.currentUser){ notify('Sign in first.','warn'); return; }
+        if (!cloud.isOn()){ notify('Turn Cloud Sync ON first in Settings.','warn'); return; }
+        if (!navigator.onLine){ notify('You appear to be offline.','warn'); return; }
+        await firebase.database().goOnline();
+        await cloud.pushAll();
+        notify('Synced');
+      }catch(e){
+        notify((e && e.message) || 'Sync failed','danger');
+      }
+    });
+  }
+
+  // Users
   if (!canManage()) return;
   if ($('#addUser')) $('#addUser').onclick = ()=> openModal('m-user');
-
   $('#save-user')?.addEventListener('click', ()=>{
     const users = load('users', []);
     const email = $('#user-email').value.trim().toLowerCase();
@@ -1511,9 +1316,8 @@ function wireUsers(){
     if (i>=0) users[i]=obj; else users.push(obj);
     save('users', users); closeModal('m-user'); notify('Saved'); renderApp();
   });
-
-  const sec = $('[data-section="users"]'); if (!sec) return;
-  sec.addEventListener('click', (e)=>{
+  const sec = $('[data-section="users"]');
+  sec?.addEventListener('click', (e)=>{
     const btn = e.target.closest('button'); if (!btn) return;
     const email = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!email) return;
     if (btn.hasAttribute('data-edit')) {
@@ -1529,22 +1333,227 @@ function wireUsers(){
   });
 }
 
-/* ------------- Search index + utils ------------- */
+// Contact page (simple in-app form using EmailJS - user must paste keys)
+function viewPage(key){
+  return `<div class="card"><div class="card-body">${pageContent[key]||'<p>Page</p>'}</div></div>`;
+}
+const pageContent = {
+  policy: `<h3>Policy</h3>
+    <p>Our privacy & data use policy for Inventory.</p>`,
+  license:`<h3>License</h3><pre>MIT License</pre>`,
+  setup:  `<h3>Setup Guide</h3><p>See setup-guide.html if you use a separate page.</p>`,
+  guide:`<h3>User Guide</h3><p>Short tips: Inventory → Products → COGS → Tasks → Settings.</p>`,
+  contact:`<h3>Contact</h3>
+    <p>Send us a message.</p>
+    <div class="grid cols-2">
+      <input id="ct-name" class="input" placeholder="Your name" />
+      <input id="ct-email" class="input" type="email" placeholder="Your email" />
+    </div>
+    <textarea id="ct-msg" class="input" rows="5" placeholder="Message"></textarea>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px">
+      <button id="ct-send" class="btn"><i class="ri-send-plane-line"></i> Send</button>
+    </div>`
+};
+function wireContact(){
+  // Initialize EmailJS once (put your key below or initialize in index.html)
+  try{
+    if (window.emailjs && !window._emailjs_init){
+      emailjs.init("WT0GOYrL9HnDKvLUf"); // <-- replace with your EmailJS public key
+      window._emailjs_init = true;
+    }
+  }catch{}
+
+  $('#ct-send')?.addEventListener('click', async ()=>{
+    const name = $('#ct-name').value.trim();
+    const email= $('#ct-email').value.trim();
+    const msg  = $('#ct-msg').value.trim();
+    if (!name || !email || !msg) return notify('Please fill all fields','warn');
+
+    try{
+      if (!window.emailjs){ notify('EmailJS not loaded','danger'); return; }
+      // Use your own service & template IDs
+      const res = await emailjs.send("service_z9tkmvr","template_q5q471f",{
+        from_name:name, reply_to:email, message:msg
+      });
+      notify('Message sent!');
+      $('#ct-name').value=''; $('#ct-email').value=''; $('#ct-msg').value='';
+    }catch(e){
+      notify('Failed to send. Check EmailJS connection.','danger');
+    }
+  });
+}
+
+// Modals
+function postModal(){
+  if (!canCreate()) return '';
+  return `
+  <div class="modal-backdrop" id="mb-post"></div>
+  <div class="modal" id="m-post">
+    <div class="dialog">
+      <div class="head"><strong>Post</strong><button class="btn ghost" data-close="m-post">Close</button></div>
+      <div class="body grid">
+        <input id="post-id" type="hidden" />
+        <input id="post-title" class="input" placeholder="Title" />
+        <textarea id="post-body" class="input" placeholder="Body"></textarea>
+        <input id="post-img" class="input" placeholder="Image URL (optional)" />
+      </div>
+      <div class="foot"><button class="btn" id="save-post">Save</button></div>
+    </div>
+  </div>`;
+}
+function invModal(){
+  if (!canCreate()) return '';
+  return `
+  <div class="modal-backdrop" id="mb-inv"></div>
+  <div class="modal" id="m-inv">
+    <div class="dialog">
+      <div class="head"><strong>Inventory Item</strong><button class="btn ghost" data-close="m-inv">Close</button></div>
+      <div class="body grid">
+        <input id="inv-id" type="hidden" />
+        <input id="inv-name" class="input" placeholder="Name" />
+        <input id="inv-code" class="input" placeholder="Code" />
+        <select id="inv-type" class="input">
+          <option>Raw</option><option>Cooked</option><option>Dry</option><option>Other</option>
+        </select>
+        <input id="inv-price" class="input" type="number" step="0.01" placeholder="Price" />
+        <input id="inv-stock" class="input" type="number" placeholder="Stock" />
+        <input id="inv-threshold" class="input" type="number" placeholder="Threshold" />
+        <input id="inv-img" class="input" placeholder="Image URL (optional)" />
+      </div>
+      <div class="foot"><button class="btn" id="save-inv">Save</button></div>
+    </div>
+  </div>`;
+}
+function prodModal(){
+  if (!canCreate()) return '';
+  return `
+  <div class="modal-backdrop" id="mb-prod"></div>
+  <div class="modal" id="m-prod">
+    <div class="dialog">
+      <div class="head"><strong>Product</strong><button class="btn ghost" data-close="m-prod">Close</button></div>
+      <div class="body grid">
+        <input id="prod-id" type="hidden" />
+        <input id="prod-name" class="input" placeholder="Name" />
+        <input id="prod-barcode" class="input" placeholder="Barcode" />
+        <input id="prod-price" class="input" type="number" step="0.01" placeholder="Price" />
+        <input id="prod-type" class="input" placeholder="Type" />
+        <textarea id="prod-ingredients" class="input" placeholder="Ingredients"></textarea>
+        <textarea id="prod-instructions" class="input" placeholder="Instructions"></textarea>
+        <input id="prod-img" class="input" placeholder="Image URL (optional)" />
+      </div>
+      <div class="foot"><button class="btn" id="save-prod">Save</button></div>
+    </div>
+  </div>`;
+}
+function prodCardModal(){
+  return `
+  <div class="modal-backdrop" id="mb-card"></div>
+  <div class="modal" id="m-card">
+    <div class="dialog">
+      <div class="head"><strong id="pc-name">Product</strong><button class="btn ghost" data-close="m-card">Close</button></div>
+      <div class="body grid cols-2">
+        <div><img id="pc-img" style="width:100%;border-radius:12px;border:1px solid var(--card-border)" /></div>
+        <div class="grid">
+          <div><strong>Barcode:</strong> <span id="pc-barcode"></span></div>
+          <div><strong>Price:</strong> <span id="pc-price"></span></div>
+          <div><strong>Type:</strong> <span id="pc-type"></span></div>
+          <div><strong>Ingredients:</strong><div id="pc-ingredients"></div></div>
+          <div><strong>Instructions:</strong><div id="pc-instructions"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+function cogsModal(){
+  if (!canCreate()) return '';
+  return `
+  <div class="modal-backdrop" id="mb-cogs"></div>
+  <div class="modal" id="m-cogs">
+    <div class="dialog">
+      <div class="head"><strong>COGS Row</strong><button class="btn ghost" data-close="m-cogs">Close</button></div>
+      <div class="body grid cols-2">
+        <input id="cogs-id" type="hidden" />
+        <input id="cogs-date" class="input" type="date" />
+        <input id="cogs-grossIncome" class="input" type="number" step="0.01" placeholder="Gross Income" />
+        <input id="cogs-produceCost" class="input" type="number" step="0.01" placeholder="Produce Cost" />
+        <input id="cogs-itemCost" class="input" type="number" step="0.01" placeholder="Item Cost" />
+        <input id="cogs-freight" class="input" type="number" step="0.01" placeholder="Freight" />
+        <input id="cogs-delivery" class="input" type="number" step="0.01" placeholder="Delivery" />
+        <input id="cogs-other" class="input" type="number" step="0.01" placeholder="Other" />
+      </div>
+      <div class="foot"><button class="btn" id="save-cogs">Save</button></div>
+    </div>
+  </div>`;
+}
+function taskModal(){
+  if (!canCreate()) return '';
+  return `
+  <div class="modal-backdrop" id="mb-task"></div>
+  <div class="modal" id="m-task">
+    <div class="dialog">
+      <div class="head"><strong>Task</strong><button class="btn ghost" data-close="m-task">Close</button></div>
+      <div class="body grid">
+        <input id="task-id" type="hidden" />
+        <input id="task-title" class="input" placeholder="Title" />
+        <select id="task-status">
+          <option value="todo">To do</option>
+          <option value="inprogress">In progress</option>
+          <option value="done">Done</option>
+        </select>
+      </div>
+      <div class="foot"><button class="btn" id="save-task">Save</button></div>
+    </div>
+  </div>`;
+}
+function userModal(){
+  if (!canManage()) return '';
+  return `
+  <div class="modal-backdrop" id="mb-user"></div>
+  <div class="modal" id="m-user">
+    <div class="dialog">
+      <div class="head"><strong>User</strong><button class="btn ghost" data-close="m-user">Close</button></div>
+      <div class="body grid">
+        <input id="user-name" class="input" placeholder="Name" />
+        <input id="user-email" class="input" type="email" placeholder="Email" />
+        <input id="user-username" class="input" placeholder="Username" />
+        <select id="user-role">
+          <option value="user">User</option>
+          <option value="manager">Manager</option>
+          <option value="admin">Admin</option>
+        </select>
+        <input id="user-img" class="input" placeholder="Image URL (optional)" />
+      </div>
+      <div class="foot"><button class="btn" id="save-user">Save</button></div>
+    </div>
+  </div>`;
+}
+
+// Static pages dictionary (already above in pageContent)
+
+// Helpers
+function canManage(){ return session && (session.role==='admin' || session.role==='manager'); }
+function canCreate(){ return session && (session.role==='admin' || session.role==='manager'); }
+function openModal(id){ $('#'+id)?.classList.add('active'); $('#mb-'+id.split('-')[1])?.classList.add('active'); }
+function closeModal(id){ $('#'+id)?.classList.remove('active'); $('#mb-'+id.split('-')[1])?.classList.remove('active'); }
+
+// Part F — Search index + boot
+/* =========================
+   Part F — Search + Boot
+   ========================= */
+
 function buildSearchIndex(){
   const posts = load('posts', []);
   const inv   = load('inventory', []);
   const prods = load('products', []);
   const cogs  = load('cogs', []);
   const users = load('users', []);
-
   const pages = [
-    { id:'policy',  label:'Policy', section:'Pages', route:'policy' },
-    { id:'license', label:'License',section:'Pages', route:'license' },
+    { id:'policy',  label:'Policy',  section:'Pages', route:'policy' },
+    { id:'license', label:'License', section:'Pages', route:'license' },
     { id:'setup',   label:'Setup Guide', section:'Pages', route:'setup' },
     { id:'contact', label:'Contact', section:'Pages', route:'contact' },
     { id:'guide',   label:'User Guide', section:'Pages', route:'guide' },
   ];
-
   const ix = [];
   posts.forEach(p => ix.push({ id:p.id, label:p.title, section:'Posts', route:'dashboard', text:`${p.title} ${p.body}` }));
   inv.forEach(i => ix.push({ id:i.id, label:i.name, section:'Inventory', route:'inventory', text:`${i.name} ${i.code} ${i.type}` }));
@@ -1566,11 +1575,14 @@ function searchAll(index, q){
     .sort((a,b) => b.score - a.score)
     .map(x => x.item);
 }
-function scrollToRow(id){ const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior:'smooth', block:'center' }); }
+function scrollToRow(id){
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior:'smooth', block:'center' });
+}
 
-/* ------------- Boot ------------- */
+// Initial render
 if (session) renderApp();
 if (!session) renderLogin();
 
-// Expose
+// Expose for console
 window._inventory = { go, load, save, cloud };
