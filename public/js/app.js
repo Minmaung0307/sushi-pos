@@ -275,26 +275,56 @@ function renderLogin() {
   }
 
   try {
-    await auth.signInWithEmailAndPassword(email, pass);
-    notify('Welcome!');
+  await auth.signInWithEmailAndPassword(email, pass);
+  notify('Welcome!');
 
-    // ✅ Fallback: if some browsers delay onAuthStateChanged, force-render
-    setTimeout(() => {
-      if (auth.currentUser && (!session || !document.querySelector('.app'))) {
-        console.log('[auth] Fallback render fired.');
-        ensureSessionAndRender(auth.currentUser);
+  // Robust fallback: poll briefly, then force render once.
+  let done = false;
+  const started = Date.now();
+  const poll = setInterval(() => {
+    const rendered = !!document.querySelector('.app');
+    const timedOut = Date.now() - started > 2000; // 2s
+    if (rendered || timedOut) {
+      clearInterval(poll);
+      if (!rendered) {
+        console.log('[auth] Fallback render fired (forcing ensureSessionAndRender).');
+        try {
+          ensureSessionAndRender(auth.currentUser);
+        } catch (err) {
+          console.error('[auth] ensureSessionAndRender failed:', err);
+          notify(err?.message || 'Render failed', 'danger');
+        }
       }
-    }, 800);
-  } catch (e) {
-    const msg = e && e.message ? e.message : 'Login failed';
-    if (/network/i.test(msg)) {
-      notify('Network error: please check your connection and try again.', 'danger');
-    } else if (/password/i.test(msg)) {
-      notify('Incorrect email or password.', 'danger');
-    } else {
-      notify(msg, 'danger');
     }
-  }
+  }, 100);
+} catch (e) {
+  const msg = e?.message || 'Login failed';
+  if (/network/i.test(msg))      notify('Network error: please check your connection and try again.','danger');
+  else if (/password|user/i.test(msg)) notify('Incorrect email or password.','danger');
+  else                             notify(msg,'danger');
+}
+
+  // try {
+  //   await auth.signInWithEmailAndPassword(email, pass);
+  //   notify('Welcome!');
+
+  //   // ✅ Fallback: if some browsers delay onAuthStateChanged, force-render
+  //   setTimeout(() => {
+  //     if (auth.currentUser && (!session || !document.querySelector('.app'))) {
+  //       console.log('[auth] Fallback render fired.');
+  //       ensureSessionAndRender(auth.currentUser);
+  //     }
+  //   }, 800);
+  // } catch (e) {
+  //   const msg = e && e.message ? e.message : 'Login failed';
+  //   if (/network/i.test(msg)) {
+  //     notify('Network error: please check your connection and try again.', 'danger');
+  //   } else if (/password/i.test(msg)) {
+  //     notify('Incorrect email or password.', 'danger');
+  //   } else {
+  //     notify(msg, 'danger');
+  //   }
+  // }
 };
 
   document.getElementById('btnLogin')?.addEventListener('click', doSignIn);
