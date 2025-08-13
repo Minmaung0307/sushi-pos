@@ -2,7 +2,7 @@
   "name": "Inventory",
   "short_name": "Inventory",
   "description": "Lightweight inventory, COGS, tasks & products manager.",
-  "start_url": "/",
+  "start_url": ".",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
