@@ -167,51 +167,61 @@ function resetIdleTimer(){
 ['click','mousemove','keydown','touchstart','scroll'].forEach(evt=> window.addEventListener(evt, resetIdleTimer, {passive:true}));
 
 // --- Auth state --------------------------------------------------------------
+// Ensures we build a local session profile and render the app.
+// Use this both from onAuthStateChanged and as a fallback after sign-in.
 async function ensureSessionAndRender(user) {
-  if (!user) return;
+  applyTheme();
+
+  if (!user) {
+    session = null;
+    save('session', null);
+    if (idleTimer) clearTimeout(idleTimer);
+    renderLogin();
+    return;
+  }
 
   const email = (user.email || '').toLowerCase();
   let users = load('users', []);
-  let prof = users.find(u => (u.email||'').toLowerCase() === email);
+  let prof = users.find(u => (u.email || '').toLowerCase() === email);
+
   if (!prof) {
     const role = SUPER_ADMINS.includes(email) ? 'admin' : 'user';
-    prof = { name: role==='admin'?'Admin':'User', username: email.split('@')[0], email, contact:'', role, password:'', img:'' };
-    users.push(prof); save('users', users);
-  } else if (SUPER_ADMINS.includes(email) && prof.role!=='admin') {
-    prof.role = 'admin'; save('users', users);
+    prof = {
+      name: role === 'admin' ? 'Admin' : 'User',
+      username: email.split('@')[0],
+      email,
+      contact: '',
+      role,
+      password: '',
+      img: ''
+    };
+    users.push(prof);
+    save('users', users);
+  } else if (SUPER_ADMINS.includes(email) && prof.role !== 'admin') {
+    prof.role = 'admin';
+    save('users', users);
   }
-  session = { ...prof }; save('session', session);
 
+  session = { ...prof };
+  save('session', session);
+
+  // If cloud sync was ON previously, reconnect streams
   try {
-    if (cloud.isOn()){
-      await firebase.database().goOnline();
-      await cloud.pullAllOnce();
-      cloud.subscribeAll();
+    if (cloud && typeof cloud.isOn === 'function' && cloud.isOn()) {
+      try { await firebase.database().goOnline(); } catch (_) {}
+      try { await cloud.pullAllOnce(); } catch (_) {}
+      try { cloud.subscribeAll(); } catch (_) {}
     }
   } catch (_) {}
 
   resetIdleTimer();
-  currentRoute = load('_route','home');
+  currentRoute = load('_route', 'home');
   renderApp();
 }
 
 auth.onAuthStateChanged(async (user) => {
-  console.log('[auth] onAuthStateChanged fired. user?', !!user);
-  applyTheme();
-  if (user) {
-    try {
-      await ensureSessionAndRender(user);
-    } catch (e) {
-      console.warn('[auth] ensureSessionAndRender failed, trying hard fallback:', e);
-      session = load('session', null);
-      if (session) renderApp(); else renderLogin();
-    }
-  } else {
-    console.log('[auth] signed out');
-    session = null; save('session', null);
-    if (idleTimer) clearTimeout(idleTimer);
-    renderLogin();
-  }
+  // Single source of truth to render app or login
+  await ensureSessionAndRender(user);
 });
 
 // Part B — Login UI + Sidebar/Topbar + renderApp + global listeners + sidebar search shell
@@ -255,36 +265,37 @@ function renderLogin() {
 
   // UPDATED doSignIn with mobile/offline + fallback render
   const doSignIn = async () => {
-    const email = (document.getElementById('li-email')?.value || '').trim();
-    const pass  = document.getElementById('li-pass')?.value || '';
-    if (!email || !pass) { notify('Enter email & password', 'warn'); return; }
+  const email = (document.getElementById('li-email')?.value || '').trim();
+  const pass  = document.getElementById('li-pass')?.value || '';
+  if (!email || !pass) { notify('Enter email & password', 'warn'); return; }
 
-    if (!navigator.onLine) {
-      notify('You appear to be offline. Connect to the internet and try again.', 'warn');
-      return;
-    }
+  if (!navigator.onLine) {
+    notify('You appear to be offline. Connect to the internet and try again.', 'warn');
+    return;
+  }
 
-    try {
-      await auth.signInWithEmailAndPassword(email, pass);
-      notify('Welcome!');
-      // Fallback: force render if onAuthStateChanged doesn’t fire soon
-      setTimeout(() => {
-        if (!session && auth.currentUser) {
-          console.log('[auth] Fallback render fired.');
-          ensureSessionAndRender(auth.currentUser);
-        }
-      }, 1200);
-    } catch (e) {
-      const msg = e && e.message ? e.message : 'Login failed';
-      if (/network/i.test(msg)) {
-        notify('Network error: please check your connection and try again.', 'danger');
-      } else if (/password/i.test(msg)) {
-        notify('Incorrect email or password.', 'danger');
-      } else {
-        notify(msg, 'danger');
+  try {
+    await auth.signInWithEmailAndPassword(email, pass);
+    notify('Welcome!');
+
+    // ✅ Fallback: if some browsers delay onAuthStateChanged, force-render
+    setTimeout(() => {
+      if (auth.currentUser && (!session || !document.querySelector('.app'))) {
+        console.log('[auth] Fallback render fired.');
+        ensureSessionAndRender(auth.currentUser);
       }
+    }, 800);
+  } catch (e) {
+    const msg = e && e.message ? e.message : 'Login failed';
+    if (/network/i.test(msg)) {
+      notify('Network error: please check your connection and try again.', 'danger');
+    } else if (/password/i.test(msg)) {
+      notify('Incorrect email or password.', 'danger');
+    } else {
+      notify(msg, 'danger');
     }
-  };
+  }
+};
 
   document.getElementById('btnLogin')?.addEventListener('click', doSignIn);
   document.getElementById('li-pass')?.addEventListener('keydown', (e) => {
