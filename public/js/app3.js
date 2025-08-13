@@ -1,4 +1,4 @@
-// Part A — Core bootstrap
+// Part A — Firebase init, low-level helpers, theme, Cloud Sync (RTDB), seed, auth, router/idle
 /* =========================
    Part A — Core bootstrap
    ========================= */
@@ -169,14 +169,9 @@ function save(k, v){
 
 // --- Globals + seed ----------------------------------------------------------
 const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com'];
-let session      = load('session', null);           // single source of truth
+let session      = load('session', null);
 let currentRoute = load('_route', 'home');
 let searchQuery  = load('_searchQ', '');
-
-// Small role helpers used by views
-function canManage(){ return !!(session && (session.role === 'admin' || session.role === 'manager')); }
-function canCreate(){ return canManage(); }
-
 (function seedOnFirstRun(){
   if (load('_seeded', false)) return;
   const now = Date.now();
@@ -218,9 +213,222 @@ function resetIdleTimer(){
 }
 ['click','mousemove','keydown','touchstart','scroll'].forEach(evt=> window.addEventListener(evt, resetIdleTimer, {passive:true}));
 
-// Part B — Login UI + Sidebar/Topbar + renderApp + search shell
+// --- Auth state --------------------------------------------------------------
+// Ensures we build a local session profile and render the app.
+// Use this both from onAuthStateChanged and as a fallback after sign-in.
+async function ensureSessionAndRender(user) {
+  applyTheme();
+
+  if (!user) {
+    session = null;
+    save('session', null);
+    if (idleTimer) clearTimeout(idleTimer);
+    renderLogin();
+    return;
+  }
+
+  const email = (user.email || '').toLowerCase();
+  let users = load('users', []);
+  let prof = users.find(u => (u.email || '').toLowerCase() === email);
+
+  if (!prof) {
+    const role = SUPER_ADMINS.includes(email) ? 'admin' : 'user';
+    prof = {
+      name: role === 'admin' ? 'Admin' : 'User',
+      username: email.split('@')[0],
+      email,
+      contact: '',
+      role,
+      password: '',
+      img: ''
+    };
+    users.push(prof);
+    save('users', users);
+  } else if (SUPER_ADMINS.includes(email) && prof.role !== 'admin') {
+    prof.role = 'admin';
+    save('users', users);
+  }
+
+  session = { ...prof };
+  save('session', session);
+
+  // If cloud sync was ON previously, reconnect streams
+  try {
+    if (cloud && typeof cloud.isOn === 'function' && cloud.isOn()) {
+      try { await firebase.database().goOnline(); } catch (_) {}
+      try { await cloud.pullAllOnce(); } catch (_) {}
+      try { cloud.subscribeAll(); } catch (_) {}
+    }
+  } catch (_) {}
+
+  resetIdleTimer();
+  currentRoute = load('_route', 'home');
+  renderApp();
+}
+
+// auth.onAuthStateChanged(async (user) => {
+//   // Single source of truth to render app or login
+//   await ensureSessionAndRender(user);
+// });
+// ---- auth state ----
+auth.onAuthStateChanged(async (user) => {
+  console.log('[auth] onAuthStateChanged:', !!user, user?.email || '');
+  try {
+    await ensureSessionAndRender(user);
+  } catch (err) {
+    console.error('[auth] ensureSessionAndRender crashed:', err);
+    notify(err?.message || 'Render failed', 'danger');
+    showRescue(err);
+  }
+});
+
+// ---- ensureSessionAndRender (wrap the final render) ----
+async function ensureSessionAndRender(user) {
+  try {
+    applyTheme();
+
+    if (!user) {
+      session = null;
+      save('session', null);
+      if (idleTimer) clearTimeout(idleTimer);
+      renderLogin();
+      return;
+    }
+
+    const email = (user.email || '').toLowerCase();
+    let users = load('users', []);
+    let prof = users.find(u => (u.email || '').toLowerCase() === email);
+
+    if (!prof) {
+      const role = SUPER_ADMINS.includes(email) ? 'admin' : 'user';
+      prof = {
+        name: role === 'admin' ? 'Admin' : 'User',
+        username: email.split('@')[0],
+        email,
+        contact: '',
+        role,
+        password: '',
+        img: ''
+      };
+      users.push(prof);
+      save('users', users);
+    } else if (SUPER_ADMINS.includes(email) && prof.role !== 'admin') {
+      prof.role = 'admin';
+      save('users', users);
+    }
+
+    session = { ...prof };
+    save('session', session);
+
+    // Reconnect cloud if previously ON (best-effort)
+    try {
+      if (cloud?.isOn?.()) {
+        try { await firebase.database().goOnline(); } catch {}
+        try { await cloud.pullAllOnce(); } catch {}
+        try { cloud.subscribeAll(); } catch {}
+      }
+    } catch {}
+
+    resetIdleTimer();
+    currentRoute = load('_route', 'home');
+
+    // <-- Any crash after here was previously invisible
+    try {
+      renderApp();
+    } catch (err) {
+      console.error('[renderApp] crashed:', err);
+      notify(err?.message || 'Render error', 'danger');
+      showRescue(err);
+    }
+  } catch (outer) {
+    console.error('[ensureSessionAndRender] outer crash:', outer);
+    notify(outer?.message || 'Render failed', 'danger');
+    showRescue(outer);
+  }
+}
+
+// ---- renderApp (guard entire render) ----
+const __orig_renderApp = typeof renderApp === 'function' ? renderApp : null;
+function renderApp(){
+  try {
+    if (!window.session) { renderLogin(); return; }
+
+    const root = document.getElementById('root');
+    if (!root) throw new Error('#root not found');
+
+    // (original renderApp body from your Part B here)
+    // --- BEGIN ORIGINAL BODY ---
+    const safeView = (route) => {
+      const m = {
+        home:       typeof viewHome === 'function'      ? viewHome
+                   : ()=> `<div class="card"><div class="card-body"><h3>Home</h3><p>Content coming soon.</p></div></div>`,
+        dashboard:  typeof viewDashboard === 'function' ? viewDashboard
+                   : ()=> `<div class="card"><div class="card-body"><h3>Dashboard</h3><p>Content coming soon.</p></div></div>`,
+        inventory:  typeof viewInventory === 'function' ? viewInventory
+                   : ()=> `<div class="card"><div class="card-body"><h3>Inventory</h3><p>Content coming soon.</p></div></div>`,
+        products:   typeof viewProducts === 'function'  ? viewProducts
+                   : ()=> `<div class="card"><div class="card-body"><h3>Products</h3><p>Content coming soon.</p></div></div>`,
+        cogs:       typeof viewCOGS === 'function'      ? viewCOGS
+                   : ()=> `<div class="card"><div class="card-body"><h3>COGS</h3><p>Content coming soon.</p></div></div>`,
+        tasks:      typeof viewTasks === 'function'     ? viewTasks
+                   : ()=> `<div class="card"><div class="card-body"><h3>Tasks</h3><p>Content coming soon.</p></div></div>`,
+        settings:   typeof viewSettings === 'function'  ? viewSettings
+                   : ()=> `<div class="card"><div class="card-body"><h3>Settings</h3><p>Content coming soon.</p></div></div>`,
+        search:     typeof viewSearch === 'function'    ? viewSearch
+                   : ()=> `<div class="card"><div class="card-body"><h3>Search</h3><p>Type in the sidebar.</p></div></div>`,
+        policy:     ()=> typeof viewPage === 'function' ? viewPage('policy')  : `<div class="card"><div class="card-body"><h3>Policy</h3></div></div>`,
+        license:    ()=> typeof viewPage === 'function' ? viewPage('license') : `<div class="card"><div class="card-body"><h3>License</h3></div></div>`,
+        setup:      ()=> typeof viewPage === 'function' ? viewPage('setup')   : `<div class="card"><div class="card-body"><h3>Setup Guide</h3></div></div>`,
+        contact:    ()=> typeof viewPage === 'function' ? viewPage('contact') : `<div class="card"><div class="card-body"><h3>Contact</h3></div></div>`,
+        guide:      ()=> typeof viewPage === 'function' ? viewPage('guide')   : `<div class="card"><div class="card-body"><h3>User Guide</h3></div></div>`,
+      };
+      const fn = m[currentRoute] || m.home;
+      return typeof fn === 'function' ? fn() : fn;
+    };
+
+    root.innerHTML = `
+      <div class="app">
+        ${renderSidebar(currentRoute)}
+        <div>
+          ${renderTopbar()}
+          <div class="main" id="main">
+            ${safeView(currentRoute)}
+          </div>
+        </div>
+      </div>
+    `;
+
+    hookSidebarInteractions();
+    document.getElementById('burger')?.addEventListener('click', openSidebar, { passive:true });
+    document.getElementById('backdrop')?.addEventListener('click', closeSidebar, { passive:true });
+    document.getElementById('btnHome')?.addEventListener('click', ()=> go('home'));
+    document.getElementById('btnLogout')?.addEventListener('click', doLogout);
+    document.querySelectorAll('.card.tile[data-go]').forEach(t => {
+      t.style.cursor = 'pointer';
+      t.onclick = () => { const r = t.getAttribute('data-go'); if (r) go(r); };
+    });
+    document.querySelectorAll('#main [data-go]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const r = btn.getAttribute('data-go'); const id = btn.getAttribute('data-id');
+        if (r) go(r);
+        if (id && typeof scrollToRow === 'function') setTimeout(()=> scrollToRow(id), 80);
+      });
+    });
+    if (typeof enableMobileImagePreview === 'function') enableMobileImagePreview();
+
+  } catch (err) {
+    console.error('[renderApp] fatal:', err);
+    notify(err?.message || 'Render error', 'danger');
+    showRescue(err);
+    // Do not rethrow; we show a rescue screen instead.
+  }
+}
+
+// Part B — Login UI + Sidebar/Topbar + renderApp + global listeners + sidebar search shell
 // ===================== Part B =====================
 // Login UI + Sidebar/Topbar + renderApp + global listeners + sidebar search shell
+// This part depends on Part A providing: auth, save(), load(), notify(), applyTheme(),
+// session, currentRoute, go(route), and (optionally) cloud.
 
 // ---------- Login / Logout ----------
 function renderLogin() {
@@ -255,44 +463,69 @@ function renderLogin() {
     </div>
   `;
 
-  // Robust sign-in with fallback render
+  // UPDATED doSignIn with mobile/offline + fallback render
   const doSignIn = async () => {
-    const email = (document.getElementById('li-email')?.value || '').trim();
-    const pass  = document.getElementById('li-pass')?.value || '';
-    if (!email || !pass) { notify('Enter email & password', 'warn'); return; }
+  const email = (document.getElementById('li-email')?.value || '').trim();
+  const pass  = document.getElementById('li-pass')?.value || '';
+  if (!email || !pass) { notify('Enter email & password', 'warn'); return; }
 
-    if (!navigator.onLine) {
-      notify('You appear to be offline. Connect to the internet and try again.', 'warn');
-      return;
-    }
+  if (!navigator.onLine) {
+    notify('You appear to be offline. Connect to the internet and try again.', 'warn');
+    return;
+  }
 
-    try {
-      await auth.signInWithEmailAndPassword(email, pass);
-      notify('Welcome!');
-      // Fallback: if onAuthStateChanged lags, force one render after polling
-      let done = false;
-      const started = Date.now();
-      const poll = setInterval(() => {
-        const rendered = !!document.querySelector('.app');
-        const timedOut = Date.now() - started > 2000;
-        if (rendered || timedOut) {
-          clearInterval(poll);
-          if (!rendered) {
-            console.log('[auth] Fallback render fired (forcing ensureSessionAndRender).');
-            try { ensureSessionAndRender(auth.currentUser); } catch (err) {
-              console.error('[auth] ensureSessionAndRender failed:', err);
-              notify(err?.message || 'Render failed', 'danger');
-            }
-          }
+  try {
+  await auth.signInWithEmailAndPassword(email, pass);
+  notify('Welcome!');
+
+  // Robust fallback: poll briefly, then force render once.
+  let done = false;
+  const started = Date.now();
+  const poll = setInterval(() => {
+    const rendered = !!document.querySelector('.app');
+    const timedOut = Date.now() - started > 2000; // 2s
+    if (rendered || timedOut) {
+      clearInterval(poll);
+      if (!rendered) {
+        console.log('[auth] Fallback render fired (forcing ensureSessionAndRender).');
+        try {
+          ensureSessionAndRender(auth.currentUser);
+        } catch (err) {
+          console.error('[auth] ensureSessionAndRender failed:', err);
+          notify(err?.message || 'Render failed', 'danger');
         }
-      }, 100);
-    } catch (e) {
-      const msg = e?.message || 'Login failed';
-      if (/network/i.test(msg))      notify('Network error: please check your connection and try again.','danger');
-      else if (/password|user/i.test(msg)) notify('Incorrect email or password.','danger');
-      else                             notify(msg,'danger');
+      }
     }
-  };
+  }, 100);
+} catch (e) {
+  const msg = e?.message || 'Login failed';
+  if (/network/i.test(msg))      notify('Network error: please check your connection and try again.','danger');
+  else if (/password|user/i.test(msg)) notify('Incorrect email or password.','danger');
+  else                             notify(msg,'danger');
+}
+
+  // try {
+  //   await auth.signInWithEmailAndPassword(email, pass);
+  //   notify('Welcome!');
+
+  //   // ✅ Fallback: if some browsers delay onAuthStateChanged, force-render
+  //   setTimeout(() => {
+  //     if (auth.currentUser && (!session || !document.querySelector('.app'))) {
+  //       console.log('[auth] Fallback render fired.');
+  //       ensureSessionAndRender(auth.currentUser);
+  //     }
+  //   }, 800);
+  // } catch (e) {
+  //   const msg = e && e.message ? e.message : 'Login failed';
+  //   if (/network/i.test(msg)) {
+  //     notify('Network error: please check your connection and try again.', 'danger');
+  //   } else if (/password/i.test(msg)) {
+  //     notify('Incorrect email or password.', 'danger');
+  //   } else {
+  //     notify(msg, 'danger');
+  //   }
+  // }
+};
 
   document.getElementById('btnLogin')?.addEventListener('click', doSignIn);
   document.getElementById('li-pass')?.addEventListener('keydown', (e) => {
@@ -391,7 +624,8 @@ function renderTopbar(){
   `;
 }
 
-// ---------- Global delegated listeners ----------
+// ---------- Global delegated listeners (safe across re-renders) ----------
+// Sidebar route click
 document.addEventListener('click', (e)=>{
   const item = e.target.closest('.sidebar .item[data-route]');
   if (!item) return;
@@ -399,6 +633,7 @@ document.addEventListener('click', (e)=>{
   if (r) go(r);
 }, { passive: true });
 
+// Close modals
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-close]');
   if (!btn) return;
@@ -415,6 +650,7 @@ function hookSidebarInteractions(){
   let searchTimer;
 
   const openResultsPage = (q)=>{
+    // Only if helpers are present; otherwise fall back to a “search” route if you have one
     window.searchQuery = q; save && save('_searchQ', q);
     if (window.currentRoute !== 'search') go('search'); else renderApp();
   };
@@ -431,6 +667,7 @@ function hookSidebarInteractions(){
     const q = input.value.trim().toLowerCase();
     if (!q) { results.classList.remove('active'); results.innerHTML=''; return; }
     searchTimer = setTimeout(() => {
+      // If Part F’s buildSearchIndex/searchAll exist, use them; else show a mini “fake” result
       let out = [];
       if (typeof buildSearchIndex === 'function' && typeof searchAll === 'function') {
         const indexData = buildSearchIndex();
@@ -468,11 +705,12 @@ function hookSidebarInteractions(){
   });
 }
 
-// ---------- App shell / renderer (single, defensive) ----------
+// ---------- App shell / renderer (defensive) ----------
 function renderApp(){
-  if (!session) { renderLogin(); return; }
+  if (!window.session) { renderLogin(); return; }
 
   const root = document.getElementById('root');
+  // Choose a safe view renderer: use viewX() if it exists; else fallback content
   const safeView = (route) => {
     const m = {
       home:       typeof viewHome === 'function'      ? viewHome
@@ -515,12 +753,14 @@ function renderApp(){
 
   // Wire chrome
   hookSidebarInteractions();
+
+  // Burger / backdrop / home / logout
   document.getElementById('burger')?.addEventListener('click', openSidebar, { passive:true });
   document.getElementById('backdrop')?.addEventListener('click', closeSidebar, { passive:true });
   document.getElementById('btnHome')?.addEventListener('click', ()=> go('home'));
   document.getElementById('btnLogout')?.addEventListener('click', doLogout);
 
-  // Clickable dashboard tiles
+  // Clickable dashboard tiles that have data-go (robust)
   document.querySelectorAll('.card.tile[data-go]').forEach(t => {
     t.style.cursor = 'pointer';
     t.onclick = () => { const r = t.getAttribute('data-go'); if (r) go(r); };
@@ -535,19 +775,23 @@ function renderApp(){
     });
   });
 
+  // Don’t break if later parts haven’t defined this yet
   if (typeof enableMobileImagePreview === 'function') enableMobileImagePreview();
 }
 
 function openSidebar(){ document.getElementById('sidebar')?.classList.add('open'); document.getElementById('backdrop')?.classList.add('active'); }
 function closeSidebar(){ document.getElementById('sidebar')?.classList.remove('open'); document.getElementById('backdrop')?.classList.remove('active'); }
+// =================== End Part B ===================
 
-// Part C — Home, Search, Dashboard, Posts (+ safety helpers)
+// Part C — Home (hot weekly videos + Shuffle), Search, Dashboard (YoY & MoM), Posts
 // ===================== Part C =====================
+// Home (hot weekly videos + Shuffle), Search page, Dashboard (YoY & MoM), Posts
 
-// ---------- Small utilities ----------
+// ---------- Small utilities (safe, idempotent) ----------
 (function(){
   if (!window.USD) window.USD = (x)=> `$${Number(x||0).toFixed(2)}`;
 
+  // Parse "YYYY-MM-DD" -> { y, m, d }
   if (!window.parseYMD) {
     window.parseYMD = (s)=>{
       if (!s || typeof s !== 'string') return null;
@@ -557,6 +801,7 @@ function closeSidebar(){ document.getElementById('sidebar')?.classList.remove('o
     };
   }
 
+  // ISO week number (Mon-based), deterministic weekly pick
   if (!window.getISOWeek) {
     window.getISOWeek = (date) => {
       const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -567,6 +812,7 @@ function closeSidebar(){ document.getElementById('sidebar')?.classList.remove('o
     };
   }
 
+  // Hot videos pool (CC MP4s that play on iOS with user gesture)
   if (!window.HOT_VIDEOS) {
     window.HOT_VIDEOS = [
       {
@@ -592,6 +838,7 @@ function closeSidebar(){ document.getElementById('sidebar')?.classList.remove('o
     ];
   }
 
+  // Pick a weekly video (stable per week), but allow shuffle
   if (!window.pickWeeklyVideoIndex) {
     window.pickWeeklyVideoIndex = ()=>{
       const now = new Date();
@@ -603,7 +850,9 @@ function closeSidebar(){ document.getElementById('sidebar')?.classList.remove('o
 
 // ---------- Home ----------
 function viewHome(){
+  // Pick stable weekly video index
   const weeklyIdx = pickWeeklyVideoIndex();
+  // Track index in DOM via data attr (we set it in wireHome)
   return `
     <div class="card">
       <div class="card-body">
@@ -667,6 +916,7 @@ function viewHome(){
   `;
 }
 
+// Wire the Home video after render
 function wireHome(){
   const wrap = document.getElementById('videoWrap');
   const vEl  = document.getElementById('hotVideo');
@@ -684,11 +934,14 @@ function wireHome(){
     src.src = item.src;
     vEl.poster = item.poster || '';
     try{ vEl.load(); }catch(_){}
+    // Do not autoplay (iOS)
   };
 
+  // initial
   const startIdx = parseInt(wrap.getAttribute('data-video-index') || '0', 10) || 0;
   setVideo(startIdx);
 
+  // shuffle
   btn?.addEventListener('click', ()=>{
     const pool = window.HOT_VIDEOS || [];
     if (!pool.length) return;
@@ -735,9 +988,12 @@ function viewSearch(){
 
 // ---- SAFETY: global COGS helpers (prevents "cogs is not defined") ----
 (function(){
+  // Always read from storage; never rely on a global "cogs"
   if (!window.getCogs) {
     window.getCogs = () => (typeof load === 'function' ? (load('cogs', []) || []) : []);
   }
+
+  // If any code calls sumSalesByMonth, make it safe
   if (typeof window.sumSalesByMonth !== 'function') {
     window.sumSalesByMonth = (year, month) => {
       const rows = getCogs();
@@ -749,7 +1005,7 @@ function viewSearch(){
   }
 })();
 
-// ---------- Dashboard ----------
+// ---------- Dashboard (tiles + Low/Critical + MoM + YoY + Posts full-width) ----------
 function viewDashboard(){
   const posts = load('posts', []);
   const inv   = load('inventory', []);
@@ -758,9 +1014,11 @@ function viewDashboard(){
   const tasks = load('tasks', []);
   const cogs  = load('cogs', []);
 
+  // Low/Critical counts
   const lowCt  = inv.filter(i => i.stock <= i.threshold && i.stock > Math.max(1, Math.floor(i.threshold*0.6))).length;
   const critCt = inv.filter(i => i.stock <= Math.max(1, Math.floor(i.threshold*0.6))).length;
 
+  // Month totals helpers
   const sumForMonth = (year, month)=> cogs
     .filter(r => {
       const p = parseYMD(r.date);
@@ -846,7 +1104,9 @@ function viewDashboard(){
   `;
 }
 
+// Extra wiring for Home + Dashboard + Posts
 function wireDashboard(){
+  // Add Post button (if Part E modals exist)
   const addPostBtn = document.getElementById('addPost');
   if (addPostBtn) {
     addPostBtn.onclick = () => {
@@ -858,6 +1118,7 @@ function wireDashboard(){
     };
   }
 
+  // Make sure tiles are clickable even if Part B missed it
   document.querySelectorAll('.card.tile[data-go]').forEach(t => {
     t.style.cursor = 'pointer';
     t.onclick = () => { const r = t.getAttribute('data-go'); if (r) go(r); };
@@ -868,6 +1129,7 @@ function wirePosts(){
   const sec = document.querySelector('[data-section="posts"]'); 
   if (!sec) return;
 
+  // Save (works if Part E injected the modal fields)
   document.getElementById('save-post')?.addEventListener('click', ()=>{
     const posts = load('posts', []);
     const id = document.getElementById('post-id')?.value || ('post_'+Date.now());
@@ -886,6 +1148,7 @@ function wirePosts(){
     notify('Saved'); renderApp();
   });
 
+  // Edit/Delete
   sec.addEventListener('click', (e)=>{
     const btn = e.target.closest('button'); if (!btn) return;
     const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
@@ -909,15 +1172,20 @@ function wirePosts(){
   });
 }
 
-// Hook Part C wiring after base render
+// After each render, Part B calls these conditionally.
+// We add a tiny router hook here to wire Home/Dashboard/Posts when relevant.
 (function(){
   const _oldRenderApp = window.renderApp;
+  // Only wrap once
   if (!_oldRenderApp || _oldRenderApp.__wrappedByPartC) return;
 
   window.renderApp = function(){
     _oldRenderApp.call(this);
 
+    // Home video
     if (window.currentRoute === 'home') wireHome?.();
+
+    // Dashboard + Posts
     if (window.currentRoute === 'dashboard') {
       wireDashboard?.();
       wirePosts?.();
@@ -925,9 +1193,11 @@ function wirePosts(){
   };
   window.renderApp.__wrappedByPartC = true;
 })();
+// =================== End Part C ===================
 
-// Part D — Inventory / Products / COGS / Tasks
+// Part D — Inventory / Products / COGS (+ CSV export), Tasks (free DnD even with empty lanes)
 // ===================== Part D =====================
+// Inventory / Products / COGS (+ CSV export), Tasks (free DnD even with empty lanes)
 
 // ---------- Reusable CSV export ----------
 function downloadCSV(filename, rows, headers) {
@@ -1031,16 +1301,19 @@ function wireInventory(){
   const sec = document.querySelector('[data-section="inventory"]');
   if (!sec) return;
 
+  // Export
   document.getElementById('export-inventory')?.addEventListener('click', ()=>{
     const items = load('inventory', []);
     downloadCSV('inventory.csv', items, ['id','name','code','type','price','stock','threshold','img']);
   });
 
+  // Add
   document.getElementById('addInv')?.addEventListener('click', ()=>{
     if (typeof openModal === 'function' && document.getElementById('m-inv')) {
       openModal('m-inv');
       return;
     }
+    // Fallback (no modal yet)
     const nm = prompt('Name?'); if (!nm) return;
     const items = load('inventory', []);
     const id = 'inv_'+Date.now();
@@ -1048,6 +1321,7 @@ function wireInventory(){
     save('inventory', items); renderApp();
   });
 
+  // Save (modal path; safe if modal exists in Part E)
   document.getElementById('save-inv')?.addEventListener('click', ()=>{
     const items = load('inventory', []);
     const id = document.getElementById('inv-id').value || ('inv_'+Date.now());
@@ -1069,6 +1343,7 @@ function wireInventory(){
     notify('Saved'); renderApp();
   });
 
+  // Row actions
   sec.addEventListener('click', (e)=>{
     const btn = e.target.closest('button'); if (!btn) return;
     const items = load('inventory', []);
@@ -1089,6 +1364,7 @@ function wireInventory(){
         document.getElementById('inv-threshold').value=it.threshold;
         document.getElementById('inv-img').value=it.img || '';
       } else {
+        // Fallback quick edit
         const nm = prompt('Name:', it.name); if (!nm) return;
         it.name = nm; save('inventory', items); renderApp();
       }
@@ -1101,6 +1377,7 @@ function wireInventory(){
       save('inventory', next); notify('Deleted'); renderApp(); return;
     }
 
+    // Inc/Dec stock & threshold
     const id =
       btn.getAttribute('data-inc') ||
       btn.getAttribute('data-dec') ||
@@ -1176,15 +1453,18 @@ function wireProducts(){
   const sec = document.querySelector('[data-section="products"]');
   if (!sec) return;
 
+  // Export
   document.getElementById('export-products')?.addEventListener('click', ()=>{
     const items = load('products', []);
     downloadCSV('products.csv', items, ['id','name','barcode','price','type','ingredients','instructions','img']);
   });
 
+  // Add
   document.getElementById('addProd')?.addEventListener('click', ()=>{
     if (typeof openModal === 'function' && document.getElementById('m-prod')) {
       openModal('m-prod'); return;
     }
+    // Fallback
     const nm = prompt('Product name?'); if (!nm) return;
     const items = load('products', []);
     const id = 'p_'+Date.now();
@@ -1192,6 +1472,7 @@ function wireProducts(){
     save('products', items); renderApp();
   });
 
+  // Save (modal path if available)
   document.getElementById('save-prod')?.addEventListener('click', ()=>{
     const items = load('products', []);
     const id = document.getElementById('prod-id').value || ('p_'+Date.now());
@@ -1213,6 +1494,7 @@ function wireProducts(){
     notify('Saved'); renderApp();
   });
 
+  // Row actions
   sec.addEventListener('click', (e)=>{
     const btn = e.target.closest('button'); 
     if (btn) {
@@ -1319,6 +1601,7 @@ function wireCOGS(){
   const sec = document.querySelector('[data-section="cogs"]'); 
   if (!sec) return;
 
+  // Export
   document.getElementById('export-cogs')?.addEventListener('click', ()=>{
     const rows = load('cogs', []);
     downloadCSV('cogs.csv', rows, [
@@ -1326,10 +1609,12 @@ function wireCOGS(){
     ]);
   });
 
+  // Add
   document.getElementById('addCOGS')?.addEventListener('click', ()=>{
     if (typeof openModal === 'function' && document.getElementById('m-cogs')) {
       openModal('m-cogs'); return;
     }
+    // Fallback quick add
     const date = prompt('Date (YYYY-MM-DD):', new Date().toISOString().slice(0,10)) || '';
     const gross = parseFloat(prompt('Gross Income:', '0') || '0');
     const rows = load('cogs', []);
@@ -1338,6 +1623,7 @@ function wireCOGS(){
     save('cogs', rows); renderApp();
   });
 
+  // Save via modal
   document.getElementById('save-cogs')?.addEventListener('click', ()=>{
     const rows = load('cogs', []);
     const id = document.getElementById('cogs-id').value || ('c_'+Date.now());
@@ -1358,6 +1644,7 @@ function wireCOGS(){
     notify('Saved'); renderApp();
   });
 
+  // Edit/Delete
   sec.addEventListener('click', (e)=>{
     const btn = e.target.closest('button'); if (!btn) return;
     const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
@@ -1386,7 +1673,7 @@ function wireCOGS(){
   });
 }
 
-// ---------- Tasks ----------
+// ---------- Tasks (free DnD; works with empty lanes) ----------
 function viewTasks(){
   const items = load('tasks', []);
   const lane = (key, label, color)=>`
@@ -1397,6 +1684,7 @@ function viewTasks(){
           ${key==='todo' && canCreate()? `<button class="btn" id="addTask"><i class="ri-add-line"></i> Add Task</button>`:''}
         </div>
         <div class="grid lane-grid" id="lane-${key}">
+          <!-- Empty lane still accepts drops; no "Drop here" text -->
           ${items.filter(t=>t.status===key).map(t=>`
             <div class="card task-card" id="${t.id}" draggable="true" data-task="${t.id}">
               <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
@@ -1426,6 +1714,7 @@ function wireTasks(){
   const root = document.querySelector('[data-section="tasks"]'); 
   if (!root) return;
 
+  // Add / Save (modal if available, fallback prompts)
   document.getElementById('addTask')?.addEventListener('click', ()=>{
     if (typeof openModal === 'function' && document.getElementById('m-task')) {
       openModal('m-task'); return;
@@ -1473,6 +1762,7 @@ function wireTasks(){
     }
   });
 
+  // DnD: allow drops even when lane empty
   setupDnD();
 }
 
@@ -1484,13 +1774,16 @@ function setupDnD(){
     'done':       new Set(['todo','inprogress'])
   };
 
+  // Card draggable
   document.querySelectorAll('[data-task]').forEach(card=>{
     card.ondragstart = (e)=> {
       e.dataTransfer.setData('text/plain', card.getAttribute('data-task'));
+      // iOS Safari: set effect
       e.dataTransfer.dropEffect = 'move';
     };
   });
 
+  // Lane receivers
   lanes.forEach(k=>{
     const laneGrid  = document.getElementById('lane-'+k);
     const parentCard = laneGrid?.closest('.lane-row');
@@ -1526,7 +1819,7 @@ function setupDnD(){
   });
 }
 
-// Hook Part D after render
+// Hook Part D into the render cycle (in case Part B didn’t already)
 (function(){
   const _oldRenderApp = window.renderApp;
   if (!_oldRenderApp || _oldRenderApp.__wrappedByPartD) return;
@@ -1542,8 +1835,12 @@ function setupDnD(){
   window.renderApp.__wrappedByPartD = true;
 })();
 
-// Part E — Settings, Users, Contact, Static pages, Modals
+// =================== End Part D ===================
+
+// Part E — Settings (instant theme + cloud), Users, Contact (EmailJS), Static pages, All Modals
 // ===================== Part E =====================
+// Settings (instant theme + cloud), Users management, Contact (EmailJS),
+// Static pages (iframes), and ALL Modals + helpers.
 
 // ---------- Modal helpers ----------
 function openModal(id){
@@ -1559,7 +1856,7 @@ function closeModal(id){
   if (mb) mb.classList.remove('active');
 }
 
-// Mobile image preview
+// Mobile image preview (used by inventory/products thumbs)
 function enableMobileImagePreview(){
   const isPhone = window.matchMedia('(max-width: 740px)').matches;
   if (!isPhone) return;
@@ -1613,6 +1910,7 @@ function viewPage(key){
   return `<div class="card"><div class="card-body">${(window.pageContent && window.pageContent[key]) || '<p>Page</p>'}</div></div>`;
 }
 
+// Wire the Contact page (send via EmailJS or mailto fallback)
 function wireContact(){
   const btn = document.getElementById('ct-send');
   if (!btn) return;
@@ -1626,6 +1924,7 @@ function wireContact(){
     const hasEmailJS = !!(window.emailjs && window.emailjs.send);
     if (cfg && hasEmailJS){
       try{
+        // initialize if not already
         if (!window.__emailjs_inited){
           window.emailjs.init(cfg.publicKey);
           window.__emailjs_inited = true;
@@ -1647,6 +1946,7 @@ function wireContact(){
           + `&body=${encodeURIComponent(`From: ${name} <${email}>\n\n${msg}`)}`;
       }
     } else {
+      // mailto fallback
       const to = (cfg && cfg.toEmail) ? cfg.toEmail : 'you@example.com';
       notify('Opening your email app…','ok');
       window.location.href = `mailto:${encodeURIComponent(to)}`
@@ -1757,29 +2057,25 @@ function viewSettings(){
       </div>
     </div>
 
-    ${postModal()}
-    ${invModal()}
-    ${prodModal()}
-    ${prodCardModal()}
-    ${cogsModal()}
-    ${taskModal()}
     ${userModal()}
-    ${imgPreviewModal()}
   `;
 }
 
 function wireSettings(){
+  // Theme instant apply
   const mode = document.getElementById('theme-mode');
   const size = document.getElementById('theme-size');
   const applyThemeNow = ()=>{
     const t = { mode: mode.value, size: size.value };
     save('_theme2', t);
     if (typeof applyTheme === 'function') applyTheme();
-    renderApp();
+    // Re-render to update palette everywhere
+    if (typeof renderApp === 'function') renderApp();
   };
   mode?.addEventListener('change', applyThemeNow);
   size?.addEventListener('change', applyThemeNow);
 
+  // Cloud controls
   const toggle = document.getElementById('cloud-toggle');
   const syncNow = document.getElementById('cloud-sync-now');
 
@@ -1815,6 +2111,7 @@ function wireSettings(){
     }
   });
 
+  // EmailJS save
   const ejSave = document.getElementById('ej-save');
   ejSave?.addEventListener('click', ()=>{
     const cfg = {
@@ -1827,9 +2124,11 @@ function wireSettings(){
     notify('Email settings saved','ok');
   });
 
+  // Users section wiring
   wireUsers();
 }
 
+// Users CRUD (Settings page)
 function wireUsers(){
   if (!canManage()) return;
   const addBtn = document.getElementById('addUser');
@@ -2024,6 +2323,7 @@ function userModal(){
   </div>`;
 }
 
+// Image preview modal (for phones)
 function imgPreviewModal(){
   return `
   <div class="modal-backdrop" id="mb-img"></div>
@@ -2035,7 +2335,7 @@ function imgPreviewModal(){
   </div>`;
 }
 
-// Hook Part E after render
+// Ensure Settings wiring is called on render when route==settings
 (function(){
   const _oldRenderApp = window.renderApp;
   if (!_oldRenderApp || _oldRenderApp.__wrappedByPartE) return;
@@ -2049,15 +2349,20 @@ function imgPreviewModal(){
     if (window.currentRoute === 'contact') {
       wireContact();
     }
+
+    // Make sure mobile image preview is available where needed
     enableMobileImagePreview?.();
   };
   window.renderApp.__wrappedByPartE = true;
 })();
 
-// Part F — Search utilities, Service Worker, Auth, Boot
-// ===================== Part F =====================
+// =================== End Part E ===================
 
-// ---------- Search index utilities ----------
+// Part F — Search utilities + bootstrapping
+// ===================== Part F =====================
+// Search index helpers (guarded) + bootstrapping + small quality-of-life hooks.
+
+// ---------- Search index utilities (define once) ----------
 if (typeof window.buildSearchIndex !== 'function') {
   window.buildSearchIndex = function buildSearchIndex(){
     const posts = (typeof load==='function') ? load('posts', []) : [];
@@ -2122,14 +2427,14 @@ if (typeof window.scrollToRow !== 'function') {
   };
 }
 
-// ---------- Online / offline hint ----------
+// ---------- Online / offline hint (optional but handy on mobile) ----------
 (function(){
   if (!('addEventListener' in window)) return;
   window.addEventListener('online',  ()=> typeof notify==='function' && notify('Back online','ok'));
   window.addEventListener('offline', ()=> typeof notify==='function' && notify('You are offline','warn'));
 })();
 
-// ---------- Service Worker (optional) ----------
+// ---------- Service Worker (optional; if you add /service-worker.js later) ----------
 (function(){
   if (!('serviceWorker' in navigator)) return;
   const swUrl = 'service-worker.js'; // relative to /public root
@@ -2140,97 +2445,35 @@ if (typeof window.scrollToRow !== 'function') {
 
   fetch(swUrl, { method: 'HEAD' })
     .then(r => {
-      if (!r.ok) return;
+      if (!r.ok) return; // file missing => do nothing
       if ('requestIdleCallback' in window) requestIdleCallback(tryRegister);
       else setTimeout(tryRegister, 500);
     })
     .catch(() => {});
 })();
-
-// ---------- Auth state + session builder ----------
-async function ensureSessionAndRender(user) {
-  try {
-    applyTheme();
-
-    if (!user) {
-      session = null;
-      save('session', null);
-      if (idleTimer) clearTimeout(idleTimer);
-      renderLogin();
-      return;
-    }
-
-    const email = (user.email || '').toLowerCase();
-    let users = load('users', []);
-    let prof = users.find(u => (u.email || '').toLowerCase() === email);
-
-    if (!prof) {
-      const role = SUPER_ADMINS.includes(email) ? 'admin' : 'user';
-      prof = {
-        name: role === 'admin' ? 'Admin' : 'User',
-        username: email.split('@')[0],
-        email,
-        contact: '',
-        role,
-        password: '',
-        img: ''
-      };
-      users.push(prof);
-      save('users', users);
-    } else if (SUPER_ADMINS.includes(email) && prof.role !== 'admin') {
-      prof.role = 'admin';
-      save('users', users);
-    }
-
-    session = { ...prof };
-    save('session', session);
-
-    try {
-      if (cloud?.isOn?.()) {
-        try { await firebase.database().goOnline(); } catch {}
-        try { await cloud.pullAllOnce(); } catch {}
-        try { cloud.subscribeAll(); } catch {}
-      }
-    } catch {}
-
-    resetIdleTimer();
-    currentRoute = load('_route', 'home');
-
-    try {
-      renderApp();
-    } catch (err) {
-      console.error('[renderApp] crashed:', err);
-      notify(err?.message || 'Render error', 'danger');
-      showRescue(err);
-    }
-  } catch (outer) {
-    console.error('[ensureSessionAndRender] outer crash:', outer);
-    notify(outer?.message || 'Render failed', 'danger');
-    showRescue(outer);
-  }
-}
-
-auth.onAuthStateChanged(async (user) => {
-  console.log('[auth] onAuthStateChanged:', !!user, user?.email || '');
-  try {
-    await ensureSessionAndRender(user);
-  } catch (err) {
-    console.error('[auth] ensureSessionAndRender crashed:', err);
-    notify(err?.message || 'Render failed', 'danger');
-    showRescue(err);
-  }
-});
+// (function(){
+//   if ('serviceWorker' in navigator) {
+//     // Don’t block rendering; register in idle time
+//     window.requestIdleCallback
+//       ? requestIdleCallback(()=> navigator.serviceWorker.register('/service-worker.js').catch(()=>{}))
+//       : setTimeout(()=> navigator.serviceWorker.register('/service-worker.js').catch(()=>{}), 500);
+//   }
+// })();
 
 // ---------- First paint bootstrapping ----------
 (function boot(){
+  // If Part A already rendered via auth state, great.
+  // But on very first load (no session yet), ensure we show Login immediately.
   try {
-    if (typeof renderApp === 'function' && session) {
+    if (typeof renderApp === 'function' && window.session) {
       renderApp();
     } else if (typeof renderLogin === 'function') {
       renderLogin();
     }
   } catch(e){
+    // Show a soft error so you can see it on mobile
     if (typeof notify === 'function') notify(e.message || 'Startup error','danger');
+    // still try to show login
     if (typeof renderLogin === 'function') renderLogin();
   }
 })();
@@ -2245,3 +2488,4 @@ window._inventory = Object.assign(window._inventory || {}, {
   renderApp: (typeof renderApp === 'function' ? renderApp : undefined)
 });
 
+// =================== End Part F ===================
