@@ -2206,13 +2206,29 @@ if (typeof window.scrollToRow !== 'function') {
 
 // ---------- Service Worker (optional; if you add /service-worker.js later) ----------
 (function(){
-  if ('serviceWorker' in navigator) {
-    // Don’t block rendering; register in idle time
-    window.requestIdleCallback
-      ? requestIdleCallback(()=> navigator.serviceWorker.register('/service-worker.js').catch(()=>{}))
-      : setTimeout(()=> navigator.serviceWorker.register('/service-worker.js').catch(()=>{}), 500);
-  }
+  if (!('serviceWorker' in navigator)) return;
+  const swUrl = 'service-worker.js'; // relative to /public root
+
+  const tryRegister = () => navigator.serviceWorker
+    .register(swUrl)
+    .catch(err => console.warn('[sw] registration failed:', err));
+
+  fetch(swUrl, { method: 'HEAD' })
+    .then(r => {
+      if (!r.ok) return; // file missing => do nothing
+      if ('requestIdleCallback' in window) requestIdleCallback(tryRegister);
+      else setTimeout(tryRegister, 500);
+    })
+    .catch(() => {});
 })();
+// (function(){
+//   if ('serviceWorker' in navigator) {
+//     // Don’t block rendering; register in idle time
+//     window.requestIdleCallback
+//       ? requestIdleCallback(()=> navigator.serviceWorker.register('/service-worker.js').catch(()=>{}))
+//       : setTimeout(()=> navigator.serviceWorker.register('/service-worker.js').catch(()=>{}), 500);
+//   }
+// })();
 
 // ---------- First paint bootstrapping ----------
 (function boot(){
