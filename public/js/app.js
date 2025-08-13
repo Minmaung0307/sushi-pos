@@ -32,6 +32,53 @@ const notify = (msg, type='ok')=>{
 const _lsGet = (k, f)=>{ try{ const v=localStorage.getItem(k); return v==null?f:JSON.parse(v);}catch{ return f; } };
 const _lsSet = (k, v)=>{ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} };
 
+function showRescue(err){
+  const root = document.getElementById('root');
+  if (!root) return;
+  const msg = (err && (err.stack || err.message)) ? String(err.stack || err.message) : 'Unknown error';
+  root.innerHTML = `
+    <div style="max-width:680px;margin:40px auto;padding:16px;border:1px solid #ddd;border-radius:12px;font-family:system-ui">
+      <h2 style="margin:0 0 8px">Something crashed after login</h2>
+      <p style="color:#666;margin:0 0 12px">I’ll still show you controls to recover, and the exact error below.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <button id="rz-signout" style="padding:8px 12px">Sign out</button>
+        <button id="rz-clearls" style="padding:8px 12px">Clear LocalStorage</button>
+        <button id="rz-retry"   style="padding:8px 12px">Retry render</button>
+      </div>
+      <pre style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;border-radius:8px;padding:12px">${msg}</pre>
+    </div>`;
+  document.getElementById('rz-signout')?.addEventListener('click', async ()=>{
+    try { await auth.signOut(); } catch {}
+    location.reload();
+  });
+  document.getElementById('rz-clearls')?.addEventListener('click', ()=>{
+    try { localStorage.clear(); } catch {}
+    location.reload();
+  });
+  document.getElementById('rz-retry')?.addEventListener('click', ()=>{
+    try { renderApp(); } catch (e) { console.error(e); notify(e?.message||'Retry failed','danger'); }
+  });
+}
+
+// quick console diag: run _diags() in DevTools
+window._diags = function(){
+  return {
+    user: auth.currentUser ? { email: auth.currentUser.email, uid: auth.currentUser.uid } : null,
+    route: currentRoute,
+    hasSession: !!session,
+    hasAppEl: !!document.querySelector('.app'),
+    funcs: {
+      viewHome: !!window.viewHome,
+      viewDashboard: !!window.viewDashboard,
+      viewCOGS: !!window.viewCOGS,
+      viewInventory: !!window.viewInventory,
+      viewProducts: !!window.viewProducts,
+      viewTasks: !!window.viewTasks,
+      viewSettings: !!window.viewSettings
+    }
+  };
+};
+
 // --- Theme definitions --------------------------------------------------------
 const THEME_MODES = [
   { key:'light', name:'Light' },
@@ -219,10 +266,163 @@ async function ensureSessionAndRender(user) {
   renderApp();
 }
 
+// auth.onAuthStateChanged(async (user) => {
+//   // Single source of truth to render app or login
+//   await ensureSessionAndRender(user);
+// });
+// ---- auth state ----
 auth.onAuthStateChanged(async (user) => {
-  // Single source of truth to render app or login
-  await ensureSessionAndRender(user);
+  console.log('[auth] onAuthStateChanged:', !!user, user?.email || '');
+  try {
+    await ensureSessionAndRender(user);
+  } catch (err) {
+    console.error('[auth] ensureSessionAndRender crashed:', err);
+    notify(err?.message || 'Render failed', 'danger');
+    showRescue(err);
+  }
 });
+
+// ---- ensureSessionAndRender (wrap the final render) ----
+async function ensureSessionAndRender(user) {
+  try {
+    applyTheme();
+
+    if (!user) {
+      session = null;
+      save('session', null);
+      if (idleTimer) clearTimeout(idleTimer);
+      renderLogin();
+      return;
+    }
+
+    const email = (user.email || '').toLowerCase();
+    let users = load('users', []);
+    let prof = users.find(u => (u.email || '').toLowerCase() === email);
+
+    if (!prof) {
+      const role = SUPER_ADMINS.includes(email) ? 'admin' : 'user';
+      prof = {
+        name: role === 'admin' ? 'Admin' : 'User',
+        username: email.split('@')[0],
+        email,
+        contact: '',
+        role,
+        password: '',
+        img: ''
+      };
+      users.push(prof);
+      save('users', users);
+    } else if (SUPER_ADMINS.includes(email) && prof.role !== 'admin') {
+      prof.role = 'admin';
+      save('users', users);
+    }
+
+    session = { ...prof };
+    save('session', session);
+
+    // Reconnect cloud if previously ON (best-effort)
+    try {
+      if (cloud?.isOn?.()) {
+        try { await firebase.database().goOnline(); } catch {}
+        try { await cloud.pullAllOnce(); } catch {}
+        try { cloud.subscribeAll(); } catch {}
+      }
+    } catch {}
+
+    resetIdleTimer();
+    currentRoute = load('_route', 'home');
+
+    // <-- Any crash after here was previously invisible
+    try {
+      renderApp();
+    } catch (err) {
+      console.error('[renderApp] crashed:', err);
+      notify(err?.message || 'Render error', 'danger');
+      showRescue(err);
+    }
+  } catch (outer) {
+    console.error('[ensureSessionAndRender] outer crash:', outer);
+    notify(outer?.message || 'Render failed', 'danger');
+    showRescue(outer);
+  }
+}
+
+// ---- renderApp (guard entire render) ----
+const __orig_renderApp = typeof renderApp === 'function' ? renderApp : null;
+function renderApp(){
+  try {
+    if (!window.session) { renderLogin(); return; }
+
+    const root = document.getElementById('root');
+    if (!root) throw new Error('#root not found');
+
+    // (original renderApp body from your Part B here)
+    // --- BEGIN ORIGINAL BODY ---
+    const safeView = (route) => {
+      const m = {
+        home:       typeof viewHome === 'function'      ? viewHome
+                   : ()=> `<div class="card"><div class="card-body"><h3>Home</h3><p>Content coming soon.</p></div></div>`,
+        dashboard:  typeof viewDashboard === 'function' ? viewDashboard
+                   : ()=> `<div class="card"><div class="card-body"><h3>Dashboard</h3><p>Content coming soon.</p></div></div>`,
+        inventory:  typeof viewInventory === 'function' ? viewInventory
+                   : ()=> `<div class="card"><div class="card-body"><h3>Inventory</h3><p>Content coming soon.</p></div></div>`,
+        products:   typeof viewProducts === 'function'  ? viewProducts
+                   : ()=> `<div class="card"><div class="card-body"><h3>Products</h3><p>Content coming soon.</p></div></div>`,
+        cogs:       typeof viewCOGS === 'function'      ? viewCOGS
+                   : ()=> `<div class="card"><div class="card-body"><h3>COGS</h3><p>Content coming soon.</p></div></div>`,
+        tasks:      typeof viewTasks === 'function'     ? viewTasks
+                   : ()=> `<div class="card"><div class="card-body"><h3>Tasks</h3><p>Content coming soon.</p></div></div>`,
+        settings:   typeof viewSettings === 'function'  ? viewSettings
+                   : ()=> `<div class="card"><div class="card-body"><h3>Settings</h3><p>Content coming soon.</p></div></div>`,
+        search:     typeof viewSearch === 'function'    ? viewSearch
+                   : ()=> `<div class="card"><div class="card-body"><h3>Search</h3><p>Type in the sidebar.</p></div></div>`,
+        policy:     ()=> typeof viewPage === 'function' ? viewPage('policy')  : `<div class="card"><div class="card-body"><h3>Policy</h3></div></div>`,
+        license:    ()=> typeof viewPage === 'function' ? viewPage('license') : `<div class="card"><div class="card-body"><h3>License</h3></div></div>`,
+        setup:      ()=> typeof viewPage === 'function' ? viewPage('setup')   : `<div class="card"><div class="card-body"><h3>Setup Guide</h3></div></div>`,
+        contact:    ()=> typeof viewPage === 'function' ? viewPage('contact') : `<div class="card"><div class="card-body"><h3>Contact</h3></div></div>`,
+        guide:      ()=> typeof viewPage === 'function' ? viewPage('guide')   : `<div class="card"><div class="card-body"><h3>User Guide</h3></div></div>`,
+      };
+      const fn = m[currentRoute] || m.home;
+      return typeof fn === 'function' ? fn() : fn;
+    };
+
+    root.innerHTML = `
+      <div class="app">
+        ${renderSidebar(currentRoute)}
+        <div>
+          ${renderTopbar()}
+          <div class="main" id="main">
+            ${safeView(currentRoute)}
+          </div>
+        </div>
+      </div>
+    `;
+
+    hookSidebarInteractions();
+    document.getElementById('burger')?.addEventListener('click', openSidebar, { passive:true });
+    document.getElementById('backdrop')?.addEventListener('click', closeSidebar, { passive:true });
+    document.getElementById('btnHome')?.addEventListener('click', ()=> go('home'));
+    document.getElementById('btnLogout')?.addEventListener('click', doLogout);
+    document.querySelectorAll('.card.tile[data-go]').forEach(t => {
+      t.style.cursor = 'pointer';
+      t.onclick = () => { const r = t.getAttribute('data-go'); if (r) go(r); };
+    });
+    document.querySelectorAll('#main [data-go]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const r = btn.getAttribute('data-go'); const id = btn.getAttribute('data-id');
+        if (r) go(r);
+        if (id && typeof scrollToRow === 'function') setTimeout(()=> scrollToRow(id), 80);
+      });
+    });
+    if (typeof enableMobileImagePreview === 'function') enableMobileImagePreview();
+
+  } catch (err) {
+    console.error('[renderApp] fatal:', err);
+    notify(err?.message || 'Render error', 'danger');
+    showRescue(err);
+    // Do not rethrow; we show a rescue screen instead.
+  }
+}
 
 // Part B — Login UI + Sidebar/Topbar + renderApp + global listeners + sidebar search shell
 // ===================== Part B =====================
