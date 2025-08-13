@@ -1,80 +1,80 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="">
+<!doctype html>
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>User Guide · Inventory</title>
+  <title>User Guide — Inventory</title>
   <link rel="stylesheet" href="css/styles.css" />
-  <style>
-    .header { padding: 18px; border-radius: 16px;
-      background: linear-gradient(135deg, rgba(59,130,246,.15), rgba(14,165,165,.12)); }
-    details { border:1px solid var(--card-border); border-radius:12px; padding:10px 12px; background: var(--panel-2); }
-    details + details { margin-top:10px; }
-    summary { cursor:pointer; font-weight:700; }
-  </style>
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+  <meta name="color-scheme" content="dark light" />
 </head>
-<body style="padding:14px">
-  <div class="grid">
-    <div class="card">
-      <div class="card-body">
-        <div class="header">
-          <h2 style="margin:0 0 6px">User Guide</h2>
-          <div style="color:var(--muted)">Quick tips for managers & staff</div>
-        </div>
-
-        <div style="margin-top:14px" class="grid">
-          <details open>
-            <summary>Sign in & roles</summary>
-            <p>Use your email and password to sign in. Admin/Manager can manage users from <strong>Settings → Users</strong>.</p>
-          </details>
-
-          <details>
-            <summary>Inventory</summary>
-            <ul>
-              <li>Add items, adjust stock/threshold, and watch for low/critical highlights.</li>
-              <li>Export CSV anytime from the top-right of the Inventory page.</li>
-            </ul>
-          </details>
-
-          <details>
-            <summary>Products</summary>
-            <ul>
-              <li>Keep barcodes, ingredients, and instructions up to date.</li>
-              <li>Click a product thumbnail to open a detail preview.</li>
-            </ul>
-          </details>
-
-          <details>
-            <summary>COGS</summary>
-            <ul>
-              <li>Enter daily rows; totals and gross profit calculate automatically.</li>
-              <li>Dashboard shows same-month year-over-year (YoY) gross income.</li>
-              <li>Export CSV from the COGS page.</li>
-            </ul>
-          </details>
-
-          <details>
-            <summary>Tasks</summary>
-            <ul>
-              <li>Drag & drop tasks freely among <em>To do</em>, <em>In progress</em>, and <em>Done</em>, even when lanes are empty.</li>
-            </ul>
-          </details>
-
-          <details>
-            <summary>Cloud Sync (optional)</summary>
-            <ul>
-              <li>Turn ON in <strong>Settings</strong> to sync local data to your Firebase RTDB (private to your user UID).</li>
-              <li>Use <em>Sync Now</em> for a manual push when needed.</li>
-            </ul>
-          </details>
-
-          <details>
-            <summary>Theme</summary>
-            <p>Switch mode and font size in <strong>Settings</strong>; changes apply instantly.</p>
-          </details>
-        </div>
+<body>
+  <div class="page">
+    <header style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+      <div class="brand">
+        <div class="logo">📦</div>
+        <div class="title">Inventory</div>
       </div>
-    </div>
+      <a class="btn ghost" href="./"><i class="ri-arrow-left-line"></i> Back to App</a>
+    </header>
+
+    <article class="prose card">
+      <div class="card-body">
+        <h1>User Guide</h1>
+
+        <h2>Home</h2>
+        <p>Use the quick tiles to jump to Inventory, Products, COGS, or Tasks. The “Hot Weekly Video” rotates each week — tap <strong>Shuffle</strong> for another.</p>
+
+        <h2>Dashboard</h2>
+        <ul>
+          <li>See totals for items, products, users, and tasks.</li>
+          <li>Sales snapshot (MoM & YoY) based on your COGS entries.</li>
+          <li>Manage Posts (news/notes) with your role permissions.</li>
+        </ul>
+
+        <h2>Inventory</h2>
+        <ul>
+          <li>Adjust stock and thresholds with + / –.</li>
+          <li>Add/Edit/Delete items (role-based).</li>
+          <li>Export to CSV anytime.</li>
+        </ul>
+
+        <h2>Products</h2>
+        <ul>
+          <li>Click a product image (or cart icon) to see the detail card.</li>
+          <li>Track barcode, price, type, ingredients, instructions.</li>
+          <li>CSV export is available.</li>
+        </ul>
+
+        <h2>COGS</h2>
+        <ul>
+          <li>Add rows for daily costs and income; see profit in the table.</li>
+          <li>Totals auto-calc at the bottom; CSV export included.</li>
+        </ul>
+
+        <h2>Tasks</h2>
+        <ul>
+          <li>Drag any task across lanes (To do, In progress, Done).</li>
+          <li>Add/Edit/Delete as your role allows.</li>
+        </ul>
+
+        <h2>Settings</h2>
+        <ul>
+          <li>Theme (mode + font size).</li>
+          <li>Cloud Sync (enable/disable, Sync Now).</li>
+          <li>Users (manage roles within your permission level).</li>
+        </ul>
+
+        <h2>Contact</h2>
+        <p>Send email via your email client or EmailJS if configured.</p>
+
+        <h2>Login Tips</h2>
+        <ul>
+          <li>Built-in admin: <code>admin@inventory.com</code> / <code>admin123</code>.</li>
+          <li>Or, sign up your own account and use Forgot Password as needed.</li>
+        </ul>
+      </div>
+    </article>
   </div>
 </body>
 </html>

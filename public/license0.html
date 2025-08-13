@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>License · Inventory</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    .banner { padding: 18px; border-radius: 16px; border: 1px dashed var(--card-border);
+      background: linear-gradient(135deg, rgba(16,185,129,.16), rgba(14,165,165,.12)); }
+    pre { white-space: pre-wrap; word-break: break-word; background: var(--panel-2);
+      border:1px solid var(--card-border); padding: 12px; border-radius: 12px; }
+  </style>
+</head>
+<body style="padding:14px">
+  <div class="grid">
+    <div class="card">
+      <div class="card-body">
+        <div class="banner">
+          <h2 style="margin:0 0 6px">MIT License</h2>
+          <div style="color:var(--muted)">Simple, permissive license suitable for open source.</div>
+        </div>
+        <div style="margin-top:14px">
+<pre>
+MIT License
+
+Copyright (c) <span id="year"></span>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the “Software”), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>document.getElementById('year').textContent=new Date().getFullYear();</script>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Policy · Inventory</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+  <style>
+    .hero { padding: 18px; border-radius: 16px;
+      background: linear-gradient(135deg, rgba(14,165,165,.18), rgba(8,145,178,.12)); }
+    .pill { display:inline-block; padding:6px 10px; border-radius:999px;
+      background: var(--panel-2); border:1px solid var(--card-border); font-size:12px; color:var(--muted); }
+    .section { margin-top: 16px; }
+    .section h3 { margin: 0 0 8px 0; }
+    .list li { margin: 6px 0; }
+  </style>
+</head>
+<body style="padding:14px">
+  <div class="grid">
+    <div class="card">
+      <div class="card-body">
+        <div class="hero">
+          <div class="pill">Inventory</div>
+          <h2 style="margin:8px 0 4px">Policy</h2>
+          <div style="color:var(--muted)">Privacy & Terms</div>
+        </div>
+
+        <div class="section">
+          <h3>Privacy</h3>
+          <ul class="list">
+            <li>We store application data locally in your browser first. If you enable <strong>Cloud Sync</strong> in Settings, your data is synchronized to your private Firebase Realtime Database path (<code>tenants/&lt;uid&gt;/kv/*</code>).</li>
+            <li>Authentication is provided by Firebase Auth. We use your email only to identify your account in the app.</li>
+            <li>We don’t sell or share personal information with third parties.</li>
+          </ul>
+        </div>
+
+        <div class="section">
+          <h3>Data Retention</h3>
+          <p>Local data persists until you clear the browser storage. Cloud data persists until you remove it from your Firebase project.</p>
+        </div>
+
+        <div class="section">
+          <h3>Terms of Use</h3>
+          <ul class="list">
+            <li>Use the app responsibly and comply with applicable laws.</li>
+            <li>You are responsible for the accuracy of the data you enter.</li>
+            <li>The app is provided “as is,” without warranties.</li>
+          </ul>
+        </div>
+
+        <div class="section">
+          <h3>Contact</h3>
+          <p>Questions? <a href="contact.html" target="_blank" rel="noopener">Contact us</a>.</p>
+        </div>
+
+        <div class="section" style="color:var(--muted);font-size:12px">
+          Last updated: <script>document.write(new Date().toISOString().slice(0,10))</script>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

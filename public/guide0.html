@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>User Guide · Inventory</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    .header { padding: 18px; border-radius: 16px;
+      background: linear-gradient(135deg, rgba(59,130,246,.15), rgba(14,165,165,.12)); }
+    details { border:1px solid var(--card-border); border-radius:12px; padding:10px 12px; background: var(--panel-2); }
+    details + details { margin-top:10px; }
+    summary { cursor:pointer; font-weight:700; }
+  </style>
+</head>
+<body style="padding:14px">
+  <div class="grid">
+    <div class="card">
+      <div class="card-body">
+        <div class="header">
+          <h2 style="margin:0 0 6px">User Guide</h2>
+          <div style="color:var(--muted)">Quick tips for managers & staff</div>
+        </div>
+
+        <div style="margin-top:14px" class="grid">
+          <details open>
+            <summary>Sign in & roles</summary>
+            <p>Use your email and password to sign in. Admin/Manager can manage users from <strong>Settings → Users</strong>.</p>
+          </details>
+
+          <details>
+            <summary>Inventory</summary>
+            <ul>
+              <li>Add items, adjust stock/threshold, and watch for low/critical highlights.</li>
+              <li>Export CSV anytime from the top-right of the Inventory page.</li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>Products</summary>
+            <ul>
+              <li>Keep barcodes, ingredients, and instructions up to date.</li>
+              <li>Click a product thumbnail to open a detail preview.</li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>COGS</summary>
+            <ul>
+              <li>Enter daily rows; totals and gross profit calculate automatically.</li>
+              <li>Dashboard shows same-month year-over-year (YoY) gross income.</li>
+              <li>Export CSV from the COGS page.</li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>Tasks</summary>
+            <ul>
+              <li>Drag & drop tasks freely among <em>To do</em>, <em>In progress</em>, and <em>Done</em>, even when lanes are empty.</li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>Cloud Sync (optional)</summary>
+            <ul>
+              <li>Turn ON in <strong>Settings</strong> to sync local data to your Firebase RTDB (private to your user UID).</li>
+              <li>Use <em>Sync Now</em> for a manual push when needed.</li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>Theme</summary>
+            <p>Switch mode and font size in <strong>Settings</strong>; changes apply instantly.</p>
+          </details>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

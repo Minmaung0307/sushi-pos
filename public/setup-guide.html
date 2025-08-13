@@ -1,104 +1,64 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="">
+<!doctype html>
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Setup Guide · Inventory</title>
+  <title>Setup Guide — Inventory</title>
   <link rel="stylesheet" href="css/styles.css" />
-  <style>
-    .intro { padding: 18px; border-radius: 16px;
-      background: linear-gradient(135deg, rgba(245,158,11,.16), rgba(14,165,165,.10)); }
-    details { border:1px solid var(--card-border); border-radius:12px; padding:10px 12px; background: var(--panel-2); }
-    details + details { margin-top:10px; }
-    summary { cursor:pointer; font-weight:700; }
-    code { background: var(--panel); padding: 2px 6px; border-radius: 6px; border:1px solid var(--card-border); }
-  </style>
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+  <meta name="color-scheme" content="dark light" />
 </head>
-<body style="padding:14px">
-  <div class="grid">
-    <div class="card">
-      <div class="card-body">
-        <div class="intro">
-          <h2 style="margin:0 0 6px">Setup Guide</h2>
-          <div style="color:var(--muted)">From Firebase project → Hosting → Live app</div>
-        </div>
-
-        <div style="margin-top:14px" class="grid">
-          <details open>
-            <summary>1) Create Firebase project</summary>
-            <ol>
-              <li>Go to Firebase Console → <em>Add project</em>.</li>
-              <li>Enable Authentication (Email/Password) and Realtime Database (in test mode, then add rules below).</li>
-            </ol>
-          </details>
-
-          <details>
-            <summary>2) Add a Web app & SDK config</summary>
-            <ol>
-              <li>Project settings → Your apps → Web → Register app.</li>
-              <li>Copy your <code>firebaseConfig</code> and paste it in <code>public/js/app.js</code> at the top.</li>
-            </ol>
-          </details>
-
-          <details>
-            <summary>3) RTDB rules</summary>
-            <p>Rules example:</p>
-<pre>{
-  "rules": {
-    "tenants": {
-      "$uid": {
-        "kv": {
-          "$key": {
-            ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid"
-          }
-        }
-      }
-    },
-    "users": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid"
-      }
-    }
-  }
-}
-</pre>
-          </details>
-
-          <details>
-            <summary>4) Install Firebase CLI & init Hosting</summary>
-            <ol>
-              <li><code>npm i -g firebase-tools</code></li>
-              <li><code>firebase login</code></li>
-              <li>In your project folder (with <code>public/</code>): <code>firebase init hosting</code></li>
-              <li>Set <code>public</code> as the public directory; choose single-page app “No”.</li>
-            </ol>
-          </details>
-
-          <details>
-            <summary>5) Deploy</summary>
-            <ol>
-              <li><code>firebase deploy --only hosting</code></li>
-              <li>Open your Hosting URL (e.g., <code>https://&lt;project-id&gt;.web.app</code>)</li>
-            </ol>
-          </details>
-
-          <details>
-            <summary>6) Auth redirect domain</summary>
-            <p>Add your domain (e.g., <code>you-6bddf.web.app</code>) to Firebase Auth → Settings → Authorized domains.</p>
-          </details>
-
-          <details>
-            <summary>7) Turn on Cloud Sync (optional)</summary>
-            <ol>
-              <li>In the app, open <strong>Settings</strong> → Cloud Sync → set to ON.</li>
-              <li>Click <em>Sync Now</em> to push current local data to RTDB.</li>
-            </ol>
-          </details>
-        </div>
+<body>
+  <div class="page">
+    <header style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+      <div class="brand">
+        <div class="logo">📦</div>
+        <div class="title">Inventory</div>
       </div>
-    </div>
+      <a class="btn ghost" href="./"><i class="ri-arrow-left-line"></i> Back to App</a>
+    </header>
+
+    <article class="prose card">
+      <div class="card-body">
+        <h1>Setup Guide</h1>
+
+        <h2>1) Quick Start (no Firebase)</h2>
+        <ol>
+          <li>Open the app and log in with <code>admin@inventory.com</code> / <code>admin123</code>.</li>
+          <li>You’re in “local mode” — all data stays in your browser (and can be exported).</li>
+        </ol>
+
+        <h2>2) Enable Firebase Cloud Sync (optional)</h2>
+        <ol>
+          <li>Create a Firebase project → enable <strong>Email/Password</strong> in <em>Authentication</em>.</li>
+          <li>Enable <strong>Realtime Database</strong> in test mode (or add rules as needed).</li>
+          <li>Copy your project config into <code>app.js</code> (the <code>firebaseConfig</code> block).</li>
+          <li>Sign up in the app with your email, then go to <em>Settings → Cloud Sync</em> and toggle <strong>On</strong>.</li>
+        </ol>
+
+        <h2>3) Email (Contact page)</h2>
+        <p>By default the Contact page opens your email client (mailto). To send via EmailJS:</p>
+        <ol>
+          <li>Create a free account at EmailJS.</li>
+          <li>Create a <strong>service</strong> and <strong>template</strong>.</li>
+          <li>In <code>app.js</code>, call <code>emailjs.init('YOUR_PUBLIC_KEY')</code> and set your <code>service_id</code> / <code>template_id</code> in the Contact handler.</li>
+        </ol>
+
+        <h2>4) Roles & Permissions</h2>
+        <ul>
+          <li><strong>Admin</strong>: read, add, edit, delete.</li>
+          <li><strong>Manager</strong>: read, add, edit.</li>
+          <li><strong>Associate</strong>: read, add.</li>
+          <li><strong>User</strong>: read only.</li>
+        </ul>
+
+        <h2>5) Deploy</h2>
+        <ol>
+          <li>Host the <code>index.html</code>, <code>js/app.js</code>, and <code>css/styles.css</code> anywhere (Firebase Hosting, Netlify, Vercel, etc.).</li>
+          <li>Make sure your Firebase auth/domain is allowed in your project settings (Authorized domains).</li>
+        </ol>
+      </div>
+    </article>
   </div>
 </body>
 </html>

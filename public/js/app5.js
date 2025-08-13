@@ -28,7 +28,7 @@ const notify = (msg, type='ok')=>{
   setTimeout(()=>{ n.className='notification'; }, 2400);
 };
 
-// --- LocalStorage raw helpers -----------------------------------------------
+// --- LocalStorage raw helpers (no Cloud dependency) --------------------------
 const _lsGet = (k, f)=>{ try{ const v=localStorage.getItem(k); return v==null?f:JSON.parse(v);}catch{ return f; } };
 const _lsSet = (k, v)=>{ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} };
 
@@ -69,7 +69,6 @@ window._diags = function(){
     hasSession: !!session,
     hasAppEl: !!document.querySelector('.app'),
     role: session?.role,
-    authMode: session?.authMode || 'firebase'
   };
 };
 
@@ -163,8 +162,7 @@ function save(k, v){
 
 // --- Roles & permissions ------------------------------------------------------
 const ROLES = ['user','associate','manager','admin'];
-const SUPER_ADMINS = ['admin@sushi.com','admin@inventory.com']; // auto-upgrade to admin here
-
+const SUPER_ADMINS = ['admin@sushi.com']; // auto-upgrade to admin here
 function role(){ return (session?.role)||'user'; }
 function canView(){ return true; }
 function canAdd(){ return ['admin','manager','associate'].includes(role()); }
@@ -176,24 +174,11 @@ let session      = load('session', null);
 let currentRoute = load('_route', 'home');
 let searchQuery  = load('_searchQ', '');
 
-// built-in demo admin (local auth)
-const DEMO_ADMIN_EMAIL = 'admin@inventory.com';
-const DEMO_ADMIN_PASS  = 'admin123';
-
 (function seedOnFirstRun(){
-  if (load('_seeded_v2', false)) {
-    // ensure demo admin exists in users even for existing installs
-    const users = load('users', []);
-    if (!users.find(u => (u.email||'').toLowerCase() === DEMO_ADMIN_EMAIL)){
-      users.push({ name:'Admin', username:'admin', email:DEMO_ADMIN_EMAIL, contact:'', role:'admin', password:'', img:'' });
-      save('users', users);
-    }
-    return;
-  }
+  if (load('_seeded_v2', false)) return;
   const now = Date.now();
   save('users', [
     { name:'Admin',     username:'admin',     email:'admin@sushi.com',     contact:'', role:'admin',     password:'', img:'' },
-    { name:'Admin',     username:'admin',     email:DEMO_ADMIN_EMAIL,      contact:'', role:'admin',     password:'', img:'' },
     { name:'Manager',   username:'manager',   email:'manager@sushi.com',   contact:'', role:'manager',   password:'', img:'' },
     { name:'Associate', username:'associate', email:'associate@sushi.com', contact:'', role:'associate', password:'', img:'' },
     { name:'Viewer',    username:'viewer',    email:'cashier@sushi.com',   contact:'', role:'user',      password:'', img:'' },
@@ -247,16 +232,6 @@ async function ensureSessionAndRender(user) {
   try {
     applyTheme();
 
-    // NEW: allow "local admin session" even if not signed into Firebase
-    const stored = load('session', null);
-    if (!user && stored && stored.authMode === 'local') {
-      session = stored;
-      resetIdleTimer();
-      currentRoute = load('_route', 'home');
-      renderApp();
-      return;
-    }
-
     if (!user) {
       session = null;
       save('session', null);
@@ -287,7 +262,7 @@ async function ensureSessionAndRender(user) {
       save('users', users);
     }
 
-    session = { ...prof, authMode: 'firebase' };
+    session = { ...prof };
     save('session', session);
 
     try {
@@ -354,73 +329,22 @@ function renderLogin() {
               <a id="link-forgot" href="#" style="text-decoration:none">Forgot password?</a>
               <a id="link-register" href="#" style="text-decoration:none">Create account</a>
             </div>
-
-            <div style="font-size:12px;color:var(--muted);margin-top:8px">
-              Tip: You can always log in with <strong>${DEMO_ADMIN_EMAIL}</strong> / <strong>${DEMO_ADMIN_PASS}</strong> (local admin).
-            </div>
           </div>
         </div>
       </div>
     </div>
-
-    <!-- Auth modals (local to login) -->
-    <div class="modal-backdrop" id="mb-auth"></div>
-
-    <div class="modal" id="m-signup">
-      <div class="dialog">
-        <div class="head"><strong>Create account</strong><button class="btn ghost" id="cl-signup">Close</button></div>
-        <div class="body grid">
-          <input id="su-name" class="input" placeholder="Full name" />
-          <input id="su-email" class="input" type="email" placeholder="Email" />
-          <input id="su-pass" class="input" type="password" placeholder="Password" />
-          <input id="su-pass2" class="input" type="password" placeholder="Confirm password" />
-        </div>
-        <div class="foot"><button class="btn" id="btnSignupDo"><i class="ri-user-add-line"></i> Sign up</button></div>
-      </div>
-    </div>
-
-    <div class="modal" id="m-reset">
-      <div class="dialog">
-        <div class="head"><strong>Reset password</strong><button class="btn ghost" id="cl-reset">Close</button></div>
-        <div class="body grid">
-          <input id="fp-email" class="input" type="email" placeholder="Your email" />
-        </div>
-        <div class="foot"><button class="btn" id="btnResetDo"><i class="ri-mail-send-line"></i> Send reset link</button></div>
-      </div>
-    </div>
   `;
 
-  const openAuthModal = (id)=>{ $('#mb-auth')?.classList.add('active'); $(id)?.classList.add('active'); };
-  const closeAuthModal = ()=>{ $('#mb-auth')?.classList.remove('active'); $('#m-signup')?.classList.remove('active'); $('#m-reset')?.classList.remove('active'); };
-
-  // --- Sign in (supports demo local admin) ---
   const doSignIn = async () => {
-    const email = (document.getElementById('li-email')?.value || '').trim().toLowerCase();
+    const email = (document.getElementById('li-email')?.value || '').trim();
     const pass  = document.getElementById('li-pass')?.value || '';
-
     if (!email || !pass) { notify('Enter email & password', 'warn'); return; }
+    if (!navigator.onLine) { notify('You appear to be offline. Connect and try again.', 'warn'); return; }
 
-    // Local demo admin (works even without Firebase)
-    if (email === DEMO_ADMIN_EMAIL && pass === DEMO_ADMIN_PASS) {
-      const users = load('users', []);
-      let prof = users.find(u => (u.email||'').toLowerCase() === DEMO_ADMIN_EMAIL);
-      if (!prof) {
-        prof = { name:'Admin', username:'admin', email: DEMO_ADMIN_EMAIL, contact:'', role:'admin', password:'', img:'' };
-        users.push(prof); save('users', users);
-      }
-      session = { ...prof, authMode: 'local' };
-      save('session', session);
-      notify('Welcome, Admin (local mode)');
-      renderApp();
-      return;
-    }
-
-    // Normal Firebase email/password
     try {
-      if (!navigator.onLine) throw new Error('You appear to be offline.');
       await auth.signInWithEmailAndPassword(email, pass);
       notify('Welcome!');
-      // Fallback render if needed
+      let done = false;
       const started = Date.now();
       const poll = setInterval(() => {
         const rendered = !!document.querySelector('.app');
@@ -428,78 +352,29 @@ function renderLogin() {
         if (rendered || timedOut) {
           clearInterval(poll);
           if (!rendered) {
-            try { ensureSessionAndRender(auth.currentUser); } catch (err) { console.error(err); notify(err?.message||'Render failed','danger'); }
+            console.log('[auth] Fallback render fired (forcing ensureSessionAndRender).');
+            try { ensureSessionAndRender(auth.currentUser); }
+            catch (err) { console.error('[auth] ensureSessionAndRender failed:', err); notify(err?.message || 'Render failed', 'danger'); }
           }
         }
       }, 100);
     } catch (e) {
-      const code = e?.code || '';
-      if (code === 'auth/user-not-found') {
-        notify('No account found. Use Create account to register.', 'warn');
-        openAuthModal('#m-signup');
-        $('#su-email').value = email;
-      } else if (code === 'auth/wrong-password') {
-        notify('Incorrect password. Try Forgot password.', 'danger');
-      } else if (code === 'auth/network-request-failed') {
-        notify('Network error: check your connection.', 'danger');
-      } else {
-        notify(e?.message || 'Login failed', 'danger');
-      }
-    }
-  };
-
-  // --- Signup (Firebase) ---
-  const doSignup = async ()=>{
-    const name  = ($('#su-name')?.value || '').trim();
-    const email = ($('#su-email')?.value || '').trim().toLowerCase();
-    const pass  = ($('#su-pass')?.value || '');
-    const pass2 = ($('#su-pass2')?.value || '');
-    if (!email || !pass) return notify('Email and password are required','warn');
-    if (pass !== pass2)  return notify('Passwords do not match','warn');
-
-    try{
-      if (!navigator.onLine) throw new Error('You appear to be offline.');
-      await auth.createUserWithEmailAndPassword(email, pass);
-      // profile added in ensureSessionAndRender; also auto-promote super-admins
-      try { await auth.currentUser.updateProfile({ displayName: name || email.split('@')[0] }); } catch {}
-      notify('Account created — you are signed in');
-      closeAuthModal();
-    }catch(e){
-      notify(e?.message || 'Could not create account','danger');
-    }
-  };
-
-  // --- Forgot password (Firebase) ---
-  const doReset = async ()=>{
-    const email = ($('#fp-email')?.value || '').trim().toLowerCase();
-    if (!email) return notify('Enter your email','warn');
-    try{
-      if (!navigator.onLine) throw new Error('You appear to be offline.');
-      await auth.sendPasswordResetEmail(email);
-      notify('Reset email sent — check your inbox','ok');
-      closeAuthModal();
-    }catch(e){
-      notify(e?.message || 'Could not send reset email','danger');
+      const msg = e?.message || 'Login failed';
+      if (/network/i.test(msg)) notify('Network error: please check your connection.','danger');
+      else if (/password|user/i.test(msg)) notify('Incorrect email or password.','danger');
+      else notify(msg,'danger');
     }
   };
 
   document.getElementById('btnLogin')?.addEventListener('click', doSignIn);
   document.getElementById('li-pass')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSignIn(); });
-  document.getElementById('link-forgot')?.addEventListener('click', (e)=>{ e.preventDefault(); openAuthModal('#m-reset'); $('#fp-email').value = ($('#li-email')?.value||''); });
-  document.getElementById('link-register')?.addEventListener('click', (e)=>{ e.preventDefault(); openAuthModal('#m-signup'); $('#su-email').value = ($('#li-email')?.value||''); });
-
-  document.getElementById('cl-signup')?.addEventListener('click', (e)=>{ e.preventDefault(); closeAuthModal(); });
-  document.getElementById('cl-reset')?.addEventListener('click', (e)=>{ e.preventDefault(); closeAuthModal(); });
-
-  document.getElementById('btnSignupDo')?.addEventListener('click', doSignup);
-  document.getElementById('btnResetDo')?.addEventListener('click', doReset);
+  document.getElementById('link-forgot')?.addEventListener('click', (e)=>{ e.preventDefault(); notify('Ask an admin to reset your password.','ok'); });
+  document.getElementById('link-register')?.addEventListener('click', (e)=>{ e.preventDefault(); notify('Registration is disabled.','ok'); });
 }
 
 async function doLogout(){
   try { cloud?.disable?.(); } catch {}
   await auth.signOut();
-  // also clear local session (covers local admin mode)
-  save('session', null);
   notify('Signed out');
 }
 
@@ -562,6 +437,7 @@ function renderSidebar(active='home'){
 }
 
 function renderTopbar(){
+  // Compact socials so they’re visible even when the sidebar is closed on mobile
   const socialsCompact = `
     <div class="socials-compact" style="display:flex;gap:8px;align-items:center">
       <a href="https://youtube.com" target="_blank" rel="noopener" title="YouTube"><i class="ri-youtube-fill"></i></a>
@@ -600,7 +476,7 @@ document.addEventListener('click', (e) => {
   if (id && typeof closeModal === 'function') { closeModal(id); }
 }, { passive: true });
 
-// ---------- Sidebar search ----------
+// ---------- Sidebar search (shell; won’t crash if index isn’t ready) ----------
 function hookSidebarInteractions(){
   const input   = document.getElementById('globalSearch');
   const results = document.getElementById('searchResults');
@@ -734,7 +610,7 @@ function renderApp(){
 function openSidebar(){ document.getElementById('sidebar')?.classList.add('open'); document.getElementById('backdrop')?.classList.add('active'); }
 function closeSidebar(){ document.getElementById('sidebar')?.classList.remove('open'); document.getElementById('backdrop')?.classList.remove('active'); }
 
-// Part C — Home (weekly videos + shuffle), Search, Dashboard, Posts
+// Part C — Home (weekly videos + shuffle), Search, Dashboard (MoM/YoY), Posts (CRUD with roles)
 // ===================== Part C =====================
 
 // ---------- Small utilities ----------
@@ -1066,7 +942,7 @@ function wirePosts(){
   window.renderApp.__wrapC = true;
 })();
 
-// Part D — Inventory / Products / COGS / Tasks
+// Part D — Inventory / Products / COGS / Tasks (CRUD with role gating + product card modal)
 // ===================== Part D =====================
 
 // ---------- CSV export ----------
@@ -1671,10 +1547,10 @@ function setupDnD(){
   window.renderApp.__wrapD = true;
 })();
 
-// Part E — Settings (Cloud/Theme + Users CRUD), Contact, Modals
+// Part E — Settings (Cloud/Theme + Users CRUD with roles), Contact (send email), Static pages, Modals
 // ===================== Part E =====================
 
-// ---------- Modal helpers (global app modals) ----------
+// ---------- Modal helpers ----------
 function openModal(id){
   const m = document.getElementById(id);
   const mb = document.getElementById('mb-'+(id.split('-')[1]||''));
@@ -1758,6 +1634,7 @@ function wireContact(){
     if (hasEmailJS){
       try{
         if (!window.__emailjs_inited){
+          // If you want to use EmailJS, put your PUBLIC KEY here or pre-init in index.html
           // window.emailjs.init('YOUR_PUBLIC_KEY');
           window.__emailjs_inited = true;
         }
@@ -1806,7 +1683,6 @@ function viewSettings(){
               <button class="btn" id="cloud-sync-now"><i class="ri-cloud-line"></i> Sync Now</button>
             </div>
           </div>
-          <p style="color:var(--muted);font-size:12px;margin-top:8px">Note: Cloud Sync requires a Firebase login (local admin cannot use cloud).</p>
         </div>
       </div>
 
@@ -1900,7 +1776,7 @@ function wireSettings(){
     const val = e.target.value;
     try {
       if (val === 'on'){
-        if (!auth.currentUser){ notify('Sign in with Firebase to use Cloud Sync.','warn'); toggle.value='off'; return; }
+        if (!auth.currentUser){ notify('Sign in first.','warn'); toggle.value='off'; return; }
         await firebase.database().goOnline();
         await cloud.enable();
         notify('Cloud Sync ON');
@@ -1917,7 +1793,7 @@ function wireSettings(){
 
   syncNow?.addEventListener('click', async ()=>{
     try{
-      if (!auth.currentUser){ notify('Sign in with Firebase to use Cloud Sync.','warn'); return; }
+      if (!auth.currentUser){ notify('Sign in first.','warn'); return; }
       if (!cloud.isOn()){ notify('Turn Cloud Sync ON first in Settings.','warn'); return; }
       if (!navigator.onLine){ notify('You appear to be offline.','warn'); return; }
       await firebase.database().goOnline();
@@ -2223,7 +2099,7 @@ if (typeof window.scrollToRow !== 'function') {
   window.addEventListener('offline', ()=> typeof notify==='function' && notify('You are offline','warn'));
 })();
 
-// Optional Service Worker
+// Optional Service Worker (register if file exists at /public/service-worker.js)
 (function(){
   if (!('serviceWorker' in navigator)) return;
   const swUrl = 'service-worker.js';

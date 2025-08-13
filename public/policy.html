@@ -1,64 +1,47 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="">
+<!doctype html>
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Policy · Inventory</title>
+  <title>Policy — Inventory</title>
   <link rel="stylesheet" href="css/styles.css" />
   <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
-  <style>
-    .hero { padding: 18px; border-radius: 16px;
-      background: linear-gradient(135deg, rgba(14,165,165,.18), rgba(8,145,178,.12)); }
-    .pill { display:inline-block; padding:6px 10px; border-radius:999px;
-      background: var(--panel-2); border:1px solid var(--card-border); font-size:12px; color:var(--muted); }
-    .section { margin-top: 16px; }
-    .section h3 { margin: 0 0 8px 0; }
-    .list li { margin: 6px 0; }
-  </style>
+  <meta name="color-scheme" content="dark light" />
 </head>
-<body style="padding:14px">
-  <div class="grid">
-    <div class="card">
-      <div class="card-body">
-        <div class="hero">
-          <div class="pill">Inventory</div>
-          <h2 style="margin:8px 0 4px">Policy</h2>
-          <div style="color:var(--muted)">Privacy & Terms</div>
-        </div>
-
-        <div class="section">
-          <h3>Privacy</h3>
-          <ul class="list">
-            <li>We store application data locally in your browser first. If you enable <strong>Cloud Sync</strong> in Settings, your data is synchronized to your private Firebase Realtime Database path (<code>tenants/&lt;uid&gt;/kv/*</code>).</li>
-            <li>Authentication is provided by Firebase Auth. We use your email only to identify your account in the app.</li>
-            <li>We don’t sell or share personal information with third parties.</li>
-          </ul>
-        </div>
-
-        <div class="section">
-          <h3>Data Retention</h3>
-          <p>Local data persists until you clear the browser storage. Cloud data persists until you remove it from your Firebase project.</p>
-        </div>
-
-        <div class="section">
-          <h3>Terms of Use</h3>
-          <ul class="list">
-            <li>Use the app responsibly and comply with applicable laws.</li>
-            <li>You are responsible for the accuracy of the data you enter.</li>
-            <li>The app is provided “as is,” without warranties.</li>
-          </ul>
-        </div>
-
-        <div class="section">
-          <h3>Contact</h3>
-          <p>Questions? <a href="contact.html" target="_blank" rel="noopener">Contact us</a>.</p>
-        </div>
-
-        <div class="section" style="color:var(--muted);font-size:12px">
-          Last updated: <script>document.write(new Date().toISOString().slice(0,10))</script>
-        </div>
+<body>
+  <div class="page">
+    <header style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+      <div class="brand">
+        <div class="logo">📦</div>
+        <div class="title">Inventory</div>
       </div>
-    </div>
+      <a class="btn ghost" href="./"><i class="ri-arrow-left-line"></i> Back to App</a>
+    </header>
+
+    <article class="prose card">
+      <div class="card-body">
+        <h1>Privacy & Data Policy</h1>
+        <p>We keep things simple. Your data lives locally in your browser (LocalStorage). If you enable Cloud Sync in Settings and are logged in with Firebase, we mirror your data to your private Firebase Realtime Database.</p>
+
+        <h2>What we store</h2>
+        <ul>
+          <li>Inventory, Products, Posts, Tasks, COGS, Users, and Theme.</li>
+          <li>Session info (your email, role) to keep you signed in.</li>
+        </ul>
+
+        <h2>Cloud Sync</h2>
+        <p>When Cloud Sync is ON, we write your data to <code>tenants/&lt;your-uid&gt;/kv/&lt;key&gt;</code> in Firebase. Turn it OFF any time.</p>
+
+        <h2>Security</h2>
+        <ul>
+          <li>Authentication provided by Firebase Auth.</li>
+          <li>Owner controls access; roles restrict actions (view/add/edit/delete).</li>
+        </ul>
+
+        <h2>Contact</h2>
+        <p>Use the in-app Contact page to email the team.</p>
+      </div>
+    </article>
   </div>
 </body>
 </html>

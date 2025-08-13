@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Setup Guide · Inventory</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    .intro { padding: 18px; border-radius: 16px;
+      background: linear-gradient(135deg, rgba(245,158,11,.16), rgba(14,165,165,.10)); }
+    details { border:1px solid var(--card-border); border-radius:12px; padding:10px 12px; background: var(--panel-2); }
+    details + details { margin-top:10px; }
+    summary { cursor:pointer; font-weight:700; }
+    code { background: var(--panel); padding: 2px 6px; border-radius: 6px; border:1px solid var(--card-border); }
+  </style>
+</head>
+<body style="padding:14px">
+  <div class="grid">
+    <div class="card">
+      <div class="card-body">
+        <div class="intro">
+          <h2 style="margin:0 0 6px">Setup Guide</h2>
+          <div style="color:var(--muted)">From Firebase project → Hosting → Live app</div>
+        </div>
+
+        <div style="margin-top:14px" class="grid">
+          <details open>
+            <summary>1) Create Firebase project</summary>
+            <ol>
+              <li>Go to Firebase Console → <em>Add project</em>.</li>
+              <li>Enable Authentication (Email/Password) and Realtime Database (in test mode, then add rules below).</li>
+            </ol>
+          </details>
+
+          <details>
+            <summary>2) Add a Web app & SDK config</summary>
+            <ol>
+              <li>Project settings → Your apps → Web → Register app.</li>
+              <li>Copy your <code>firebaseConfig</code> and paste it in <code>public/js/app.js</code> at the top.</li>
+            </ol>
+          </details>
+
+          <details>
+            <summary>3) RTDB rules</summary>
+            <p>Rules example:</p>
+<pre>{
+  "rules": {
+    "tenants": {
+      "$uid": {
+        "kv": {
+          "$key": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    }
+  }
+}
+</pre>
+          </details>
+
+          <details>
+            <summary>4) Install Firebase CLI & init Hosting</summary>
+            <ol>
+              <li><code>npm i -g firebase-tools</code></li>
+              <li><code>firebase login</code></li>
+              <li>In your project folder (with <code>public/</code>): <code>firebase init hosting</code></li>
+              <li>Set <code>public</code> as the public directory; choose single-page app “No”.</li>
+            </ol>
+          </details>
+
+          <details>
+            <summary>5) Deploy</summary>
+            <ol>
+              <li><code>firebase deploy --only hosting</code></li>
+              <li>Open your Hosting URL (e.g., <code>https://&lt;project-id&gt;.web.app</code>)</li>
+            </ol>
+          </details>
+
+          <details>
+            <summary>6) Auth redirect domain</summary>
+            <p>Add your domain (e.g., <code>you-6bddf.web.app</code>) to Firebase Auth → Settings → Authorized domains.</p>
+          </details>
+
+          <details>
+            <summary>7) Turn on Cloud Sync (optional)</summary>
+            <ol>
+              <li>In the app, open <strong>Settings</strong> → Cloud Sync → set to ON.</li>
+              <li>Click <em>Sync Now</em> to push current local data to RTDB.</li>
+            </ol>
+          </details>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
