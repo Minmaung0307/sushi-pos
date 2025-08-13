@@ -5,7 +5,7 @@
 
 // --- Firebase (v8) -----------------------------------------------------------
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
+  apiKey: "AIzaSyBY52zMMQqsvssukui3TfQnMigWoOzeKGk",
   authDomain: "you-6bddf.firebaseapp.com",
   databaseURL: "https://you-6bddf-default-rtdb.firebaseio.com",
   projectId: "you-6bddf",
