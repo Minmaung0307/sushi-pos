@@ -16,6 +16,7 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
 const db   = firebase.database();
 
 // --- Tiny DOM helpers & notifier --------------------------------------------
@@ -166,26 +167,47 @@ function resetIdleTimer(){
 ['click','mousemove','keydown','touchstart','scroll'].forEach(evt=> window.addEventListener(evt, resetIdleTimer, {passive:true}));
 
 // --- Auth state --------------------------------------------------------------
-auth.onAuthStateChanged(async (user)=>{
-  applyTheme();
-  if (user){
-    const email = (user.email||'').toLowerCase();
-    let users = load('users', []);
-    let prof = users.find(u => (u.email||'').toLowerCase()===email);
-    if (!prof){
-      const role = SUPER_ADMINS.includes(email) ? 'admin':'user';
-      prof = { name: role==='admin'?'Admin':'User', username: email.split('@')[0], email, contact:'', role, password:'', img:'' };
-      users.push(prof); save('users', users);
-    } else if (SUPER_ADMINS.includes(email) && prof.role!=='admin'){
-      prof.role='admin'; save('users', users);
-    }
-    session = {...prof}; save('session', session);
+async function ensureSessionAndRender(user) {
+  if (!user) return;
 
-    if (cloud.isOn()){ try{ await cloud.pullAllOnce(); cloud.subscribeAll(); }catch{} }
-    resetIdleTimer();
-    currentRoute = load('_route','home');
-    renderApp();
+  const email = (user.email || '').toLowerCase();
+  let users = load('users', []);
+  let prof = users.find(u => (u.email||'').toLowerCase() === email);
+  if (!prof) {
+    const role = SUPER_ADMINS.includes(email) ? 'admin' : 'user';
+    prof = { name: role==='admin'?'Admin':'User', username: email.split('@')[0], email, contact:'', role, password:'', img:'' };
+    users.push(prof); save('users', users);
+  } else if (SUPER_ADMINS.includes(email) && prof.role!=='admin') {
+    prof.role = 'admin'; save('users', users);
+  }
+  session = { ...prof }; save('session', session);
+
+  try {
+    if (cloud.isOn()){
+      await firebase.database().goOnline();
+      await cloud.pullAllOnce();
+      cloud.subscribeAll();
+    }
+  } catch (_) {}
+
+  resetIdleTimer();
+  currentRoute = load('_route','home');
+  renderApp();
+}
+
+auth.onAuthStateChanged(async (user) => {
+  console.log('[auth] onAuthStateChanged fired. user?', !!user);
+  applyTheme();
+  if (user) {
+    try {
+      await ensureSessionAndRender(user);
+    } catch (e) {
+      console.warn('[auth] ensureSessionAndRender failed, trying hard fallback:', e);
+      session = load('session', null);
+      if (session) renderApp(); else renderLogin();
+    }
   } else {
+    console.log('[auth] signed out');
     session = null; save('session', null);
     if (idleTimer) clearTimeout(idleTimer);
     renderLogin();
@@ -231,12 +253,12 @@ function renderLogin() {
     </div>
   `;
 
+  // UPDATED doSignIn with mobile/offline + fallback render
   const doSignIn = async () => {
     const email = (document.getElementById('li-email')?.value || '').trim();
     const pass  = document.getElementById('li-pass')?.value || '';
     if (!email || !pass) { notify('Enter email & password', 'warn'); return; }
 
-    // Be nice on mobile when offline
     if (!navigator.onLine) {
       notify('You appear to be offline. Connect to the internet and try again.', 'warn');
       return;
@@ -245,8 +267,14 @@ function renderLogin() {
     try {
       await auth.signInWithEmailAndPassword(email, pass);
       notify('Welcome!');
+      // Fallback: force render if onAuthStateChanged doesn’t fire soon
+      setTimeout(() => {
+        if (!session && auth.currentUser) {
+          console.log('[auth] Fallback render fired.');
+          ensureSessionAndRender(auth.currentUser);
+        }
+      }, 1200);
     } catch (e) {
-      // Very common mobile error strings become clearer:
       const msg = e && e.message ? e.message : 'Login failed';
       if (/network/i.test(msg)) {
         notify('Network error: please check your connection and try again.', 'danger');
@@ -263,10 +291,8 @@ function renderLogin() {
     if (e.key === 'Enter') doSignIn();
   });
 
-  // These are “hooks”; Part E wires them to password reset / registration modals
   document.getElementById('link-forgot')?.addEventListener('click', (e) => {
     e.preventDefault();
-    // If Part E forgot-password modal exists, open it, else just hint
     if (typeof openModal === 'function' && document.getElementById('m-forgot')) openModal('m-forgot');
     else notify('Password reset is available in Settings > Account (coming up).', 'ok');
   });
