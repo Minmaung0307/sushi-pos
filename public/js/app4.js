@@ -1,4 +1,4 @@
-// Part A — Core bootstrap (Firebase, helpers, theme, cloud, auth, router)
+// Part A — Core bootstrap
 /* =========================
    Part A — Core bootstrap
    ========================= */
@@ -32,7 +32,6 @@ const notify = (msg, type='ok')=>{
 const _lsGet = (k, f)=>{ try{ const v=localStorage.getItem(k); return v==null?f:JSON.parse(v);}catch{ return f; } };
 const _lsSet = (k, v)=>{ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} };
 
-// --- Rescue screen -----------------------------------------------------------
 function showRescue(err){
   const root = document.getElementById('root');
   if (!root) return;
@@ -68,11 +67,19 @@ window._diags = function(){
     route: currentRoute,
     hasSession: !!session,
     hasAppEl: !!document.querySelector('.app'),
-    role: session?.role,
+    funcs: {
+      viewHome: !!window.viewHome,
+      viewDashboard: !!window.viewDashboard,
+      viewCOGS: !!window.viewCOGS,
+      viewInventory: !!window.viewInventory,
+      viewProducts: !!window.viewProducts,
+      viewTasks: !!window.viewTasks,
+      viewSettings: !!window.viewSettings
+    }
   };
 };
 
-// --- Theme -------------------------------------------------------------------
+// --- Theme definitions --------------------------------------------------------
 const THEME_MODES = [
   { key:'light', name:'Light' },
   { key:'dark',  name:'Dark'  },
@@ -160,28 +167,23 @@ function save(k, v){
   try{ if (cloud.isOn() && auth.currentUser) cloud.saveKV(k, v); }catch{}
 }
 
-// --- Roles & permissions ------------------------------------------------------
-const ROLES = ['user','associate','manager','admin'];
-const SUPER_ADMINS = ['admin@sushi.com']; // auto-upgrade to admin here
-function role(){ return (session?.role)||'user'; }
-function canView(){ return true; }
-function canAdd(){ return ['admin','manager','associate'].includes(role()); }
-function canEdit(){ return ['admin','manager'].includes(role()); }
-function canDelete(){ return ['admin'].includes(role()); }
-
 // --- Globals + seed ----------------------------------------------------------
-let session      = load('session', null);
+const SUPER_ADMINS = ['admin@sushi.com', 'minmaung0307@gmail.com'];
+let session      = load('session', null);           // single source of truth
 let currentRoute = load('_route', 'home');
 let searchQuery  = load('_searchQ', '');
 
+// Small role helpers used by views
+function canManage(){ return !!(session && (session.role === 'admin' || session.role === 'manager')); }
+function canCreate(){ return canManage(); }
+
 (function seedOnFirstRun(){
-  if (load('_seeded_v2', false)) return;
+  if (load('_seeded', false)) return;
   const now = Date.now();
   save('users', [
-    { name:'Admin',     username:'admin',     email:'admin@sushi.com',     contact:'', role:'admin',     password:'', img:'' },
-    { name:'Manager',   username:'manager',   email:'manager@sushi.com',   contact:'', role:'manager',   password:'', img:'' },
-    { name:'Associate', username:'associate', email:'associate@sushi.com', contact:'', role:'associate', password:'', img:'' },
-    { name:'Viewer',    username:'viewer',    email:'cashier@sushi.com',   contact:'', role:'user',      password:'', img:'' },
+    { name:'Admin', username:'admin', email:'admin@sushi.com', contact:'', role:'admin', password:'', img:'' },
+    { name:'Manager', username:'manager', email:'minmaung0307@gmail.com', contact:'', role:'manager', password:'', img:'' },
+    { name:'Cashier One', username:'cashier1', email:'cashier@sushi.com', contact:'', role:'user', password:'', img:'' },
   ]);
   save('inventory', [
     { id:'inv1', img:'', name:'Nori Sheets', code:'NOR-100', type:'Dry', price:3.00, stock:80, threshold:30 },
@@ -202,7 +204,7 @@ let searchQuery  = load('_searchQ', '');
     { id:'c1', date:'2024-08-01', grossIncome:1200, produceCost:280, itemCost:180, freight:45, delivery:30, other:20 },
     { id:'c2', date:'2024-08-02', grossIncome: 900, produceCost:220, itemCost:140, freight:30, delivery:25, other:10 }
   ]);
-  save('_seeded_v2', true);
+  save('_seeded', true);
 })();
 
 // --- Router + idle logout ----------------------------------------------------
@@ -216,91 +218,9 @@ function resetIdleTimer(){
 }
 ['click','mousemove','keydown','touchstart','scroll'].forEach(evt=> window.addEventListener(evt, resetIdleTimer, {passive:true}));
 
-// --- Auth state --------------------------------------------------------------
-auth.onAuthStateChanged(async (user) => {
-  console.log('[auth] onAuthStateChanged:', !!user, user?.email || '');
-  try {
-    await ensureSessionAndRender(user);
-  } catch (err) {
-    console.error('[auth] ensureSessionAndRender crashed:', err);
-    notify(err?.message || 'Render failed', 'danger');
-    showRescue(err);
-  }
-});
-
-async function ensureSessionAndRender(user) {
-  try {
-    applyTheme();
-
-    if (!user) {
-      session = null;
-      save('session', null);
-      if (idleTimer) clearTimeout(idleTimer);
-      renderLogin();
-      return;
-    }
-
-    const email = (user.email || '').toLowerCase();
-    let users = load('users', []);
-    let prof = users.find(u => (u.email || '').toLowerCase() === email);
-
-    if (!prof) {
-      const roleGuess = SUPER_ADMINS.includes(email) ? 'admin' : 'user';
-      prof = {
-        name: roleGuess === 'admin' ? 'Admin' : 'User',
-        username: email.split('@')[0],
-        email,
-        contact: '',
-        role: roleGuess,
-        password: '',
-        img: ''
-      };
-      users.push(prof);
-      save('users', users);
-    } else if (SUPER_ADMINS.includes(email) && prof.role !== 'admin') {
-      prof.role = 'admin';
-      save('users', users);
-    }
-
-    session = { ...prof };
-    save('session', session);
-
-    try {
-      if (cloud?.isOn?.()) {
-        try { await firebase.database().goOnline(); } catch {}
-        try { await cloud.pullAllOnce(); } catch {}
-        try { cloud.subscribeAll(); } catch {}
-      }
-    } catch {}
-
-    resetIdleTimer();
-    currentRoute = load('_route', 'home');
-
-    try { renderApp(); }
-    catch (err) { console.error('[renderApp] crashed:', err); notify(err?.message || 'Render error', 'danger'); showRescue(err); }
-
-  } catch (outer) {
-    console.error('[ensureSessionAndRender] outer crash:', outer);
-    notify(outer?.message || 'Render failed', 'danger');
-    showRescue(outer);
-  }
-}
-
-// ---- SAFETY: global COGS helper (prevents "cogs is not defined") ----
-(function(){
-  if (!window.getCogs) window.getCogs = () => (typeof load === 'function' ? (load('cogs', []) || []) : []);
-  if (typeof window.sumSalesByMonth !== 'function') {
-    window.sumSalesByMonth = (year, month) => {
-      const rows = getCogs();
-      const parseYMD = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s||''); return m ? { y:+m[1], m:+m[2], d:+m[3] } : null; };
-      return rows.filter(r=>{const d=parseYMD(r.date); return d && d.y===year && d.m===month;})
-                 .reduce((s, r)=> s + Number(r.grossIncome||0), 0);
-    };
-  }
-})();
-
-// Part B — Login UI + shell + renderApp + global hooks
+// Part B — Login UI + Sidebar/Topbar + renderApp + search shell
 // ===================== Part B =====================
+// Login UI + Sidebar/Topbar + renderApp + global listeners + sidebar search shell
 
 // ---------- Login / Logout ----------
 function renderLogin() {
@@ -335,15 +255,21 @@ function renderLogin() {
     </div>
   `;
 
+  // Robust sign-in with fallback render
   const doSignIn = async () => {
     const email = (document.getElementById('li-email')?.value || '').trim();
     const pass  = document.getElementById('li-pass')?.value || '';
     if (!email || !pass) { notify('Enter email & password', 'warn'); return; }
-    if (!navigator.onLine) { notify('You appear to be offline. Connect and try again.', 'warn'); return; }
+
+    if (!navigator.onLine) {
+      notify('You appear to be offline. Connect to the internet and try again.', 'warn');
+      return;
+    }
 
     try {
       await auth.signInWithEmailAndPassword(email, pass);
       notify('Welcome!');
+      // Fallback: if onAuthStateChanged lags, force one render after polling
       let done = false;
       const started = Date.now();
       const poll = setInterval(() => {
@@ -353,23 +279,36 @@ function renderLogin() {
           clearInterval(poll);
           if (!rendered) {
             console.log('[auth] Fallback render fired (forcing ensureSessionAndRender).');
-            try { ensureSessionAndRender(auth.currentUser); }
-            catch (err) { console.error('[auth] ensureSessionAndRender failed:', err); notify(err?.message || 'Render failed', 'danger'); }
+            try { ensureSessionAndRender(auth.currentUser); } catch (err) {
+              console.error('[auth] ensureSessionAndRender failed:', err);
+              notify(err?.message || 'Render failed', 'danger');
+            }
           }
         }
       }, 100);
     } catch (e) {
       const msg = e?.message || 'Login failed';
-      if (/network/i.test(msg)) notify('Network error: please check your connection.','danger');
+      if (/network/i.test(msg))      notify('Network error: please check your connection and try again.','danger');
       else if (/password|user/i.test(msg)) notify('Incorrect email or password.','danger');
-      else notify(msg,'danger');
+      else                             notify(msg,'danger');
     }
   };
 
   document.getElementById('btnLogin')?.addEventListener('click', doSignIn);
-  document.getElementById('li-pass')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSignIn(); });
-  document.getElementById('link-forgot')?.addEventListener('click', (e)=>{ e.preventDefault(); notify('Ask an admin to reset your password.','ok'); });
-  document.getElementById('link-register')?.addEventListener('click', (e)=>{ e.preventDefault(); notify('Registration is disabled.','ok'); });
+  document.getElementById('li-pass')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') doSignIn();
+  });
+
+  document.getElementById('link-forgot')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (typeof openModal === 'function' && document.getElementById('m-forgot')) openModal('m-forgot');
+    else notify('Password reset is available in Settings > Account (coming up).', 'ok');
+  });
+  document.getElementById('link-register')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (typeof openModal === 'function' && document.getElementById('m-register')) openModal('m-register');
+    else notify('Registration is disabled in this demo. Ask an admin to invite you.', 'ok');
+  });
 }
 
 async function doLogout(){
@@ -378,7 +317,7 @@ async function doLogout(){
   notify('Signed out');
 }
 
-// ---------- Sidebar + Topbar (includes mobile socials) ----------
+// ---------- Sidebar + Topbar ----------
 function renderSidebar(active='home'){
   const links = [
     { route:'home',      icon:'ri-home-5-line',              label:'Home' },
@@ -437,14 +376,6 @@ function renderSidebar(active='home'){
 }
 
 function renderTopbar(){
-  // Compact socials so they’re visible even when the sidebar is closed on mobile
-  const socialsCompact = `
-    <div class="socials-compact" style="display:flex;gap:8px;align-items:center">
-      <a href="https://youtube.com" target="_blank" rel="noopener" title="YouTube"><i class="ri-youtube-fill"></i></a>
-      <a href="https://facebook.com" target="_blank" rel="noopener" title="Facebook"><i class="ri-facebook-fill"></i></a>
-      <a href="https://instagram.com" target="_blank" rel="noopener" title="Instagram"><i class="ri-instagram-line"></i></a>
-    </div>`;
-
   return `
     <div class="topbar">
       <div class="left">
@@ -452,7 +383,6 @@ function renderTopbar(){
         <div><strong>${(currentRoute||'home').slice(0,1).toUpperCase()+ (currentRoute||'home').slice(1)}</strong></div>
       </div>
       <div class="right">
-        ${socialsCompact}
         <button class="btn ghost" id="btnHome"><i class="ri-home-5-line"></i> Home</button>
         <button class="btn secondary" id="btnLogout"><i class="ri-logout-box-r-line"></i> Logout</button>
       </div>
@@ -476,13 +406,14 @@ document.addEventListener('click', (e) => {
   if (id && typeof closeModal === 'function') { closeModal(id); }
 }, { passive: true });
 
-// ---------- Sidebar search (shell; won’t crash if index isn’t ready) ----------
+// ---------- Sidebar search (shell; won’t crash if Part F isn’t loaded yet) ----------
 function hookSidebarInteractions(){
   const input   = document.getElementById('globalSearch');
   const results = document.getElementById('searchResults');
   if (!input || !results) return;
 
   let searchTimer;
+
   const openResultsPage = (q)=>{
     window.searchQuery = q; save && save('_searchQ', q);
     if (window.currentRoute !== 'search') go('search'); else renderApp();
@@ -507,6 +438,7 @@ function hookSidebarInteractions(){
       } else {
         out = [{ route:'search', id:'', label:`Search "${q}"`, section:'All' }];
       }
+
       if (!out.length) { results.classList.remove('active'); results.innerHTML=''; return; }
       results.innerHTML = out.map(r => `
         <div class="result" data-route="${r.route}" data-id="${r.id||''}">
@@ -536,9 +468,9 @@ function hookSidebarInteractions(){
   });
 }
 
-// ---------- App shell / renderer ----------
+// ---------- App shell / renderer (single, defensive) ----------
 function renderApp(){
-  if (!window.session) { renderLogin(); return; }
+  if (!session) { renderLogin(); return; }
 
   const root = document.getElementById('root');
   const safeView = (route) => {
@@ -588,7 +520,7 @@ function renderApp(){
   document.getElementById('btnHome')?.addEventListener('click', ()=> go('home'));
   document.getElementById('btnLogout')?.addEventListener('click', doLogout);
 
-  // Clickable tiles
+  // Clickable dashboard tiles
   document.querySelectorAll('.card.tile[data-go]').forEach(t => {
     t.style.cursor = 'pointer';
     t.onclick = () => { const r = t.getAttribute('data-go'); if (r) go(r); };
@@ -603,14 +535,13 @@ function renderApp(){
     });
   });
 
-  // Phone images
   if (typeof enableMobileImagePreview === 'function') enableMobileImagePreview();
 }
 
 function openSidebar(){ document.getElementById('sidebar')?.classList.add('open'); document.getElementById('backdrop')?.classList.add('active'); }
 function closeSidebar(){ document.getElementById('sidebar')?.classList.remove('open'); document.getElementById('backdrop')?.classList.remove('active'); }
 
-// Part C — Home (weekly videos + shuffle), Search, Dashboard (MoM/YoY), Posts (CRUD with roles)
+// Part C — Home, Search, Dashboard, Posts (+ safety helpers)
 // ===================== Part C =====================
 
 // ---------- Small utilities ----------
@@ -638,10 +569,26 @@ function closeSidebar(){ document.getElementById('sidebar')?.classList.remove('o
 
   if (!window.HOT_VIDEOS) {
     window.HOT_VIDEOS = [
-      { title: 'Countryside (CC0)', src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4', poster: 'https://i.imgur.com/7v2C8bX.jpeg' },
-      { title: 'Big Buck Bunny (CC)', src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', poster: 'https://peach.blender.org/wp-content/uploads/title_anouncement.jpg?x11217' },
-      { title: 'Sintel Trailer (CC)', src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4', poster: 'https://durian.blender.org/wp-content/uploads/2010/05/sintel_poster.jpg' },
-      { title: 'Flower Close-ups (CC0)', src: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4', poster: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.jpg' }
+      {
+        title: 'Countryside (CC0)',
+        src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+        poster: 'https://i.imgur.com/7v2C8bX.jpeg'
+      },
+      {
+        title: 'Big Buck Bunny (CC)',
+        src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+        poster: 'https://peach.blender.org/wp-content/uploads/title_anouncement.jpg?x11217'
+      },
+      {
+        title: 'Sintel Trailer (CC)',
+        src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
+        poster: 'https://durian.blender.org/wp-content/uploads/2010/05/sintel_poster.jpg'
+      },
+      {
+        title: 'Flower Close-ups (CC0)',
+        src: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+        poster: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.jpg'
+      }
     ];
   }
 
@@ -734,7 +681,8 @@ function wireHome(){
     const i = ((idx % pool.length) + pool.length) % pool.length;
     const item = pool[i];
     title.textContent = item.title || 'Hot pick';
-    src.src = item.src; vEl.poster = item.poster || '';
+    src.src = item.src;
+    vEl.poster = item.poster || '';
     try{ vEl.load(); }catch(_){}
   };
 
@@ -785,6 +733,22 @@ function viewSearch(){
   `;
 }
 
+// ---- SAFETY: global COGS helpers (prevents "cogs is not defined") ----
+(function(){
+  if (!window.getCogs) {
+    window.getCogs = () => (typeof load === 'function' ? (load('cogs', []) || []) : []);
+  }
+  if (typeof window.sumSalesByMonth !== 'function') {
+    window.sumSalesByMonth = (year, month) => {
+      const rows = getCogs();
+      const pick = (r) => (typeof parseYMD === 'function' ? parseYMD(r.date) : null);
+      return rows
+        .filter(r => { const d = pick(r); return d && d.y === year && d.m === month; })
+        .reduce((s, r) => s + Number(r.grossIncome || 0), 0);
+    };
+  }
+})();
+
 // ---------- Dashboard ----------
 function viewDashboard(){
   const posts = load('posts', []);
@@ -798,7 +762,10 @@ function viewDashboard(){
   const critCt = inv.filter(i => i.stock <= Math.max(1, Math.floor(i.threshold*0.6))).length;
 
   const sumForMonth = (year, month)=> cogs
-    .filter(r => { const p = parseYMD(r.date); return p && p.y===year && p.m===month; })
+    .filter(r => {
+      const p = parseYMD(r.date);
+      return p && p.y===year && p.m===month;
+    })
     .reduce((s, r)=> s + Number(r.grossIncome||0), 0);
 
   const today = new Date();
@@ -855,7 +822,7 @@ function viewDashboard(){
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <h3 style="margin:0">Posts</h3>
-          ${canAdd() ? `<button class="btn" id="addPost"><i class="ri-add-line"></i> Add Post</button>` : ''}
+          ${canCreate() ? `<button class="btn" id="addPost"><i class="ri-add-line"></i> Add Post</button>` : ''}
         </div>
         <div class="grid" data-section="posts" style="grid-template-columns: 1fr;">
           ${posts.map(p => `
@@ -864,8 +831,9 @@ function viewDashboard(){
                 <div style="display:flex;justify-content:space-between;align-items:center">
                   <div><strong>${p.title}</strong><div style="color:var(--muted);font-size:12px">${new Date(p.createdAt).toLocaleString()}</div></div>
                   <div>
-                    ${canEdit()?`<button class="btn ghost" data-edit="${p.id}"><i class="ri-edit-line"></i></button>`:''}
-                    ${canDelete()?`<button class="btn danger" data-del="${p.id}"><i class="ri-delete-bin-6-line"></i></button>`:''}
+                    ${canCreate()?`
+                      <button class="btn ghost" data-edit="${p.id}"><i class="ri-edit-line"></i></button>
+                      <button class="btn danger" data-del="${p.id}"><i class="ri-delete-bin-6-line"></i></button>`:''}
                   </div>
                 </div>
                 ${p.img?`<img src="${p.img}" style="width:100%;border-radius:12px;margin-top:10px;border:1px solid var(--card-border)"/>`:''}
@@ -880,16 +848,27 @@ function viewDashboard(){
 
 function wireDashboard(){
   const addPostBtn = document.getElementById('addPost');
-  if (addPostBtn) addPostBtn.onclick = () => openModal('m-post');
+  if (addPostBtn) {
+    addPostBtn.onclick = () => {
+      if (typeof openModal === 'function' && document.getElementById('m-post')) {
+        openModal('m-post');
+      } else {
+        notify('Post modal not available yet.', 'warn');
+      }
+    };
+  }
+
+  document.querySelectorAll('.card.tile[data-go]').forEach(t => {
+    t.style.cursor = 'pointer';
+    t.onclick = () => { const r = t.getAttribute('data-go'); if (r) go(r); };
+  });
 }
 
 function wirePosts(){
   const sec = document.querySelector('[data-section="posts"]'); 
   if (!sec) return;
 
-  // Save (modal)
   document.getElementById('save-post')?.addEventListener('click', ()=>{
-    if (!canAdd()) return notify('No permission','warn');
     const posts = load('posts', []);
     const id = document.getElementById('post-id')?.value || ('post_'+Date.now());
     const obj = {
@@ -901,51 +880,56 @@ function wirePosts(){
     };
     if (!obj.title) return notify('Title required','warn');
     const i = posts.findIndex(x=>x.id===id);
-    if (i>=0) { if (!canEdit()) return notify('No permission','warn'); posts[i]=obj; }
-    else posts.unshift(obj);
+    if (i>=0) posts[i]=obj; else posts.unshift(obj);
     save('posts', posts);
-    closeModal('m-post');
+    if (typeof closeModal === 'function') closeModal('m-post');
     notify('Saved'); renderApp();
   });
 
-  // Edit/Delete
   sec.addEventListener('click', (e)=>{
     const btn = e.target.closest('button'); if (!btn) return;
     const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
 
     if (btn.hasAttribute('data-edit')) {
-      if (!canEdit()) return notify('No permission','warn');
       const posts = load('posts', []);
       const p = posts.find(x=>x.id===id); if (!p) return;
-      openModal('m-post');
-      document.getElementById('post-id').value = p.id;
-      document.getElementById('post-title').value = p.title;
-      document.getElementById('post-body').value = p.body;
-      document.getElementById('post-img').value = p.img||'';
+      if (typeof openModal === 'function' && document.getElementById('m-post')) {
+        openModal('m-post');
+        document.getElementById('post-id').value = p.id;
+        document.getElementById('post-title').value = p.title;
+        document.getElementById('post-body').value = p.body;
+        document.getElementById('post-img').value = p.img||'';
+      } else {
+        notify('Post modal not available yet.', 'warn');
+      }
     } else {
-      if (!canDelete()) return notify('No permission','warn');
       let posts = load('posts', []).filter(x=>x.id!==id);
       save('posts', posts); notify('Deleted'); renderApp();
     }
   });
 }
 
-// Hook render to wire home/dashboard/posts
+// Hook Part C wiring after base render
 (function(){
-  const _old = window.renderApp;
-  if (!_old || _old.__wrapC) return;
+  const _oldRenderApp = window.renderApp;
+  if (!_oldRenderApp || _oldRenderApp.__wrappedByPartC) return;
+
   window.renderApp = function(){
-    _old.call(this);
+    _oldRenderApp.call(this);
+
     if (window.currentRoute === 'home') wireHome?.();
-    if (window.currentRoute === 'dashboard') { wireDashboard?.(); wirePosts?.(); }
+    if (window.currentRoute === 'dashboard') {
+      wireDashboard?.();
+      wirePosts?.();
+    }
   };
-  window.renderApp.__wrapC = true;
+  window.renderApp.__wrappedByPartC = true;
 })();
 
-// Part D — Inventory / Products / COGS / Tasks (CRUD with role gating + product card modal)
+// Part D — Inventory / Products / COGS / Tasks
 // ===================== Part D =====================
 
-// ---------- CSV export ----------
+// ---------- Reusable CSV export ----------
 function downloadCSV(filename, rows, headers) {
   try {
     const csvRows = [];
@@ -985,7 +969,7 @@ function viewInventory(){
           <h3 style="margin:0">Inventory</h3>
           <div style="display:flex;gap:8px">
             <button class="btn ok" id="export-inventory"><i class="ri-download-2-line"></i> Export CSV</button>
-            ${canAdd() ? `<button class="btn" id="addInv"><i class="ri-add-line"></i> Add Item</button>` : ''}
+            ${canCreate() ? `<button class="btn" id="addInv"><i class="ri-add-line"></i> Add Item</button>` : ''}
           </div>
         </div>
         <div class="table-wrap" data-section="inventory">
@@ -1015,22 +999,23 @@ function viewInventory(){
                   <td>${it.type || '-'}</td>
                   <td>${USD(it.price)}</td>
                   <td>
-                    ${canAdd()? `
-                      <button class="btn ghost" data-dec="${it.id}">–</button>
-                      <span style="padding:0 10px">${it.stock}</span>
-                      <button class="btn ghost" data-inc="${it.id}">+</button>
-                    ` : `<span>${it.stock}</span>`}
+                    <button class="btn ghost" data-dec="${it.id}">–</button>
+                    <span style="padding:0 10px">${it.stock}</span>
+                    <button class="btn ghost" data-inc="${it.id}">+</button>
                   </td>
                   <td>
-                    ${canAdd()? `
-                      <button class="btn ghost" data-dec-th="${it.id}">–</button>
-                      <span style="padding:0 10px">${it.threshold}</span>
-                      <button class="btn ghost" data-inc-th="${it.id}">+</button>
-                    ` : `<span>${it.threshold}</span>`}
+                    <button class="btn ghost" data-dec-th="${it.id}">–</button>
+                    <span style="padding:0 10px">${it.threshold}</span>
+                    <button class="btn ghost" data-inc-th="${it.id}">+</button>
                   </td>
                   <td>
-                    ${canEdit()? `<button class="btn ghost" data-edit="${it.id}"><i class="ri-edit-line"></i></button>`:''}
-                    ${canDelete()? `<button class="btn danger" data-del="${it.id}"><i class="ri-delete-bin-6-line"></i></button>`:''}
+                    ${
+                      canCreate()
+                        ? `
+                      <button class="btn ghost" data-edit="${it.id}"><i class="ri-edit-line"></i></button>
+                      <button class="btn danger" data-del="${it.id}"><i class="ri-delete-bin-6-line"></i></button>`
+                        : ''
+                    }
                   </td>
                 </tr>`;
               }).join('')}
@@ -1052,38 +1037,36 @@ function wireInventory(){
   });
 
   document.getElementById('addInv')?.addEventListener('click', ()=>{
-    if (!canAdd()) return notify('No permission','warn');
-    openModal('m-inv');
-    $('#inv-id').value='';
-    $('#inv-name').value='';
-    $('#inv-code').value='';
-    $('#inv-type').value='Other';
-    $('#inv-price').value='0';
-    $('#inv-stock').value='0';
-    $('#inv-threshold').value='0';
-    $('#inv-img').value='';
+    if (typeof openModal === 'function' && document.getElementById('m-inv')) {
+      openModal('m-inv');
+      return;
+    }
+    const nm = prompt('Name?'); if (!nm) return;
+    const items = load('inventory', []);
+    const id = 'inv_'+Date.now();
+    items.push({ id, name:nm, code:'', type:'Other', price:0, stock:0, threshold:0, img:'' });
+    save('inventory', items); renderApp();
   });
 
   document.getElementById('save-inv')?.addEventListener('click', ()=>{
-    if (!canAdd()) return notify('No permission','warn');
     const items = load('inventory', []);
-    const id = $('#inv-id').value || ('inv_'+Date.now());
+    const id = document.getElementById('inv-id').value || ('inv_'+Date.now());
     const obj = {
       id,
-      name: $('#inv-name').value.trim(),
-      code: $('#inv-code').value.trim(),
-      type: $('#inv-type').value.trim(),
-      price: parseFloat($('#inv-price').value || '0'),
-      stock: parseInt($('#inv-stock').value || '0'),
-      threshold: parseInt($('#inv-threshold').value || '0'),
-      img: $('#inv-img').value.trim(),
+      name: document.getElementById('inv-name').value.trim(),
+      code: document.getElementById('inv-code').value.trim(),
+      type: document.getElementById('inv-type').value.trim(),
+      price: parseFloat(document.getElementById('inv-price').value || '0'),
+      stock: parseInt(document.getElementById('inv-stock').value || '0'),
+      threshold: parseInt(document.getElementById('inv-threshold').value || '0'),
+      img: document.getElementById('inv-img').value.trim(),
     };
     if (!obj.name) return notify('Name required','warn');
     const i = items.findIndex(x=>x.id===id);
-    if (i>=0) { if (!canEdit()) return notify('No permission','warn'); items[i]=obj; }
-    else items.push(obj);
+    if (i>=0) items[i]=obj; else items.push(obj);
     save('inventory', items);
-    closeModal('m-inv'); notify('Saved'); renderApp();
+    if (typeof closeModal === 'function') closeModal('m-inv');
+    notify('Saved'); renderApp();
   });
 
   sec.addEventListener('click', (e)=>{
@@ -1092,23 +1075,27 @@ function wireInventory(){
     const get = (id)=> items.find(x=>x.id===id);
 
     if (btn.hasAttribute('data-edit')) {
-      if (!canEdit()) return notify('No permission','warn');
       const id = btn.getAttribute('data-edit');
       const it = get(id); if (!it) return;
-      openModal('m-inv');
-      $('#inv-id').value=id;
-      $('#inv-name').value=it.name;
-      $('#inv-code').value=it.code;
-      $('#inv-type').value=it.type || 'Other';
-      $('#inv-price').value=it.price;
-      $('#inv-stock').value=it.stock;
-      $('#inv-threshold').value=it.threshold;
-      $('#inv-img').value=it.img || '';
+
+      if (typeof openModal === 'function' && document.getElementById('m-inv')) {
+        openModal('m-inv');
+        document.getElementById('inv-id').value=id;
+        document.getElementById('inv-name').value=it.name;
+        document.getElementById('inv-code').value=it.code;
+        document.getElementById('inv-type').value=it.type || 'Other';
+        document.getElementById('inv-price').value=it.price;
+        document.getElementById('inv-stock').value=it.stock;
+        document.getElementById('inv-threshold').value=it.threshold;
+        document.getElementById('inv-img').value=it.img || '';
+      } else {
+        const nm = prompt('Name:', it.name); if (!nm) return;
+        it.name = nm; save('inventory', items); renderApp();
+      }
       return;
     }
 
     if (btn.hasAttribute('data-del')) {
-      if (!canDelete()) return notify('No permission','warn');
       const id = btn.getAttribute('data-del');
       const next = items.filter(x=>x.id!==id);
       save('inventory', next); notify('Deleted'); renderApp(); return;
@@ -1121,7 +1108,6 @@ function wireInventory(){
       btn.getAttribute('data-dec-th');
 
     if (!id) return;
-    if (!canAdd()) return notify('No permission','warn');
     const it = get(id); if (!it) return;
 
     if (btn.hasAttribute('data-inc')) { it.stock++; }
@@ -1143,7 +1129,7 @@ function viewProducts(){
           <h3 style="margin:0">Products</h3>
           <div style="display:flex;gap:8px">
             <button class="btn ok" id="export-products"><i class="ri-download-2-line"></i> Export CSV</button>
-            ${canAdd() ? `<button class="btn" id="addProd"><i class="ri-add-line"></i> Add Product</button>` : ''}
+            ${canCreate() ? `<button class="btn" id="addProd"><i class="ri-add-line"></i> Add Product</button>` : ''}
           </div>
         </div>
         <div class="table-wrap" data-section="products">
@@ -1169,8 +1155,13 @@ function viewProducts(){
                   <td>${USD(it.price)}</td>
                   <td>${it.type||'-'}</td>
                   <td>
-                    ${canEdit()? `<button class="btn ghost" data-edit="${it.id}"><i class="ri-edit-line"></i></button>`:''}
-                    ${canDelete()? `<button class="btn danger" data-del="${it.id}"><i class="ri-delete-bin-6-line"></i></button>`:''}
+                    ${
+                      canCreate()
+                        ? `
+                      <button class="btn ghost" data-edit="${it.id}"><i class="ri-edit-line"></i></button>
+                      <button class="btn danger" data-del="${it.id}"><i class="ri-delete-bin-6-line"></i></button>`
+                        : ''
+                    }
                   </td>
                 </tr>`).join('')}
             </tbody>
@@ -1191,81 +1182,65 @@ function wireProducts(){
   });
 
   document.getElementById('addProd')?.addEventListener('click', ()=>{
-    if (!canAdd()) return notify('No permission','warn');
-    openModal('m-prod');
-    $('#prod-id').value='';
-    $('#prod-name').value='';
-    $('#prod-barcode').value='';
-    $('#prod-price').value='0';
-    $('#prod-type').value='';
-    $('#prod-ingredients').value='';
-    $('#prod-instructions').value='';
-    $('#prod-img').value='';
+    if (typeof openModal === 'function' && document.getElementById('m-prod')) {
+      openModal('m-prod'); return;
+    }
+    const nm = prompt('Product name?'); if (!nm) return;
+    const items = load('products', []);
+    const id = 'p_'+Date.now();
+    items.push({ id, name:nm, barcode:'', price:0, type:'', ingredients:'', instructions:'', img:'' });
+    save('products', items); renderApp();
   });
 
   document.getElementById('save-prod')?.addEventListener('click', ()=>{
-    if (!canAdd()) return notify('No permission','warn');
     const items = load('products', []);
-    const id = $('#prod-id').value || ('p_'+Date.now());
+    const id = document.getElementById('prod-id').value || ('p_'+Date.now());
     const obj = {
       id,
-      name: $('#prod-name').value.trim(),
-      barcode: $('#prod-barcode').value.trim(),
-      price: parseFloat($('#prod-price').value || '0'),
-      type: $('#prod-type').value.trim(),
-      ingredients: $('#prod-ingredients').value.trim(),
-      instructions: $('#prod-instructions').value.trim(),
-      img: $('#prod-img').value.trim()
+      name: document.getElementById('prod-name').value.trim(),
+      barcode: document.getElementById('prod-barcode').value.trim(),
+      price: parseFloat(document.getElementById('prod-price').value || '0'),
+      type: document.getElementById('prod-type').value.trim(),
+      ingredients: document.getElementById('prod-ingredients').value.trim(),
+      instructions: document.getElementById('prod-instructions').value.trim(),
+      img: document.getElementById('prod-img').value.trim()
     };
     if (!obj.name) return notify('Name required','warn');
     const i = items.findIndex(x=>x.id===id);
-    if (i>=0) { if (!canEdit()) return notify('No permission','warn'); items[i]=obj; }
-    else items.push(obj);
+    if (i>=0) items[i]=obj; else items.push(obj);
     save('products', items);
-    closeModal('m-prod');
+    if (typeof closeModal === 'function') closeModal('m-prod');
     notify('Saved'); renderApp();
   });
 
-  // Row actions + product card modal
   sec.addEventListener('click', (e)=>{
-    const prodCard = e.target.closest('.prod-thumb');
-    if (prodCard){
-      const id = prodCard.getAttribute('data-card');
-      const items = load('products', []);
-      const it = items.find(x=>x.id===id); if (!it) return;
-      $('#pc-name').textContent = it.name;
-      $('#pc-img').src = it.img || 'icons/icon-512.png';
-      $('#pc-barcode').textContent = it.barcode || '';
-      $('#pc-price').textContent = USD(it.price);
-      $('#pc-type').textContent = it.type || '';
-      $('#pc-ingredients').textContent = it.ingredients || '';
-      $('#pc-instructions').textContent = it.instructions || '';
-      openModal('m-card');
-      return;
-    }
-
     const btn = e.target.closest('button'); 
-    if (!btn) return;
-    const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); 
-    if (!id) return;
+    if (btn) {
+      const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); 
+      if (!id) return;
 
-    const items = load('products', []);
-    if (btn.hasAttribute('data-edit')) {
-      if (!canEdit()) return notify('No permission','warn');
-      const it = items.find(x=>x.id===id); if (!it) return;
-      openModal('m-prod');
-      $('#prod-id').value=id;
-      $('#prod-name').value=it.name;
-      $('#prod-barcode').value=it.barcode||'';
-      $('#prod-price').value=it.price;
-      $('#prod-type').value=it.type||'';
-      $('#prod-ingredients').value=it.ingredients||'';
-      $('#prod-instructions').value=it.instructions||'';
-      $('#prod-img').value=it.img||'';
-    } else {
-      if (!canDelete()) return notify('No permission','warn');
-      const next = items.filter(x=>x.id!==id);
-      save('products', next); notify('Deleted'); renderApp();
+      const items = load('products', []);
+      if (btn.hasAttribute('data-edit')) {
+        const it = items.find(x=>x.id===id); if (!it) return;
+        if (typeof openModal === 'function' && document.getElementById('m-prod')) {
+          openModal('m-prod');
+          document.getElementById('prod-id').value=id;
+          document.getElementById('prod-name').value=it.name;
+          document.getElementById('prod-barcode').value=it.barcode||'';
+          document.getElementById('prod-price').value=it.price;
+          document.getElementById('prod-type').value=it.type||'';
+          document.getElementById('prod-ingredients').value=it.ingredients||'';
+          document.getElementById('prod-instructions').value=it.instructions||'';
+          document.getElementById('prod-img').value=it.img||'';
+        } else {
+          const nm = prompt('Product name:', it.name); if (!nm) return;
+          it.name = nm; save('products', items); renderApp();
+        }
+      } else {
+        const next = items.filter(x=>x.id!==id);
+        save('products', next); notify('Deleted'); renderApp();
+      }
+      return;
     }
   });
 }
@@ -1291,7 +1266,7 @@ function viewCOGS(){
           <h3 style="margin:0">COGS</h3>
           <div style="display:flex;gap:8px">
             <button class="btn ok" id="export-cogs"><i class="ri-download-2-line"></i> Export CSV</button>
-            ${canAdd() ? `<button class="btn" id="addCOGS"><i class="ri-add-line"></i> Add Row</button>` : ''}
+            ${canCreate() ? `<button class="btn" id="addCOGS"><i class="ri-add-line"></i> Add Row</button>` : ''}
           </div>
         </div>
         <div class="table-wrap" data-section="cogs">
@@ -1312,8 +1287,13 @@ function viewCOGS(){
                   <td>${USD(r.other)}</td>
                   <td>${USD(grossProfit(r))}</td>
                   <td>
-                    ${canEdit()? `<button class="btn ghost" data-edit="${r.id}"><i class="ri-edit-line"></i></button>`:''}
-                    ${canDelete()? `<button class="btn danger" data-del="${r.id}"><i class="ri-delete-bin-6-line"></i></button>`:''}
+                    ${
+                      canCreate()
+                        ? `
+                      <button class="btn ghost" data-edit="${r.id}"><i class="ri-edit-line"></i></button>
+                      <button class="btn danger" data-del="${r.id}"><i class="ri-delete-bin-6-line"></i></button>`
+                        : ''
+                    }
                   </td>
                 </tr>`).join('')}
               <tr class="tr-total">
@@ -1347,37 +1327,35 @@ function wireCOGS(){
   });
 
   document.getElementById('addCOGS')?.addEventListener('click', ()=>{
-    if (!canAdd()) return notify('No permission','warn');
-    openModal('m-cogs');
-    $('#cogs-id').value='';
-    $('#cogs-date').value=new Date().toISOString().slice(0,10);
-    $('#cogs-grossIncome').value='0';
-    $('#cogs-produceCost').value='0';
-    $('#cogs-itemCost').value='0';
-    $('#cogs-freight').value='0';
-    $('#cogs-delivery').value='0';
-    $('#cogs-other').value='0';
+    if (typeof openModal === 'function' && document.getElementById('m-cogs')) {
+      openModal('m-cogs'); return;
+    }
+    const date = prompt('Date (YYYY-MM-DD):', new Date().toISOString().slice(0,10)) || '';
+    const gross = parseFloat(prompt('Gross Income:', '0') || '0');
+    const rows = load('cogs', []);
+    const id = 'c_'+Date.now();
+    rows.push({ id, date, grossIncome:gross, produceCost:0, itemCost:0, freight:0, delivery:0, other:0 });
+    save('cogs', rows); renderApp();
   });
 
   document.getElementById('save-cogs')?.addEventListener('click', ()=>{
-    if (!canAdd()) return notify('No permission','warn');
     const rows = load('cogs', []);
-    const id = $('#cogs-id').value || ('c_'+Date.now());
+    const id = document.getElementById('cogs-id').value || ('c_'+Date.now());
     const row = {
       id,
-      date: $('#cogs-date').value || new Date().toISOString().slice(0,10),
-      grossIncome: parseFloat($('#cogs-grossIncome').value || '0'),
-      produceCost: parseFloat($('#cogs-produceCost').value || '0'),
-      itemCost: parseFloat($('#cogs-itemCost').value || '0'),
-      freight: parseFloat($('#cogs-freight').value || '0'),
-      delivery: parseFloat($('#cogs-delivery').value || '0'),
-      other: parseFloat($('#cogs-other').value || '0'),
+      date: document.getElementById('cogs-date').value || new Date().toISOString().slice(0,10),
+      grossIncome: parseFloat(document.getElementById('cogs-grossIncome').value || '0'),
+      produceCost: parseFloat(document.getElementById('cogs-produceCost').value || '0'),
+      itemCost: parseFloat(document.getElementById('cogs-itemCost').value || '0'),
+      freight: parseFloat(document.getElementById('cogs-freight').value || '0'),
+      delivery: parseFloat(document.getElementById('cogs-delivery').value || '0'),
+      other: parseFloat(document.getElementById('cogs-other').value || '0'),
     };
     const i = rows.findIndex(x=>x.id===id);
-    if (i>=0) { if (!canEdit()) return notify('No permission','warn'); rows[i]=row; }
-    else rows.push(row);
+    if (i>=0) rows[i]=row; else rows.push(row);
     save('cogs', rows);
-    closeModal('m-cogs'); notify('Saved'); renderApp();
+    if (typeof closeModal === 'function') closeModal('m-cogs');
+    notify('Saved'); renderApp();
   });
 
   sec.addEventListener('click', (e)=>{
@@ -1385,26 +1363,30 @@ function wireCOGS(){
     const id = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!id) return;
 
     if (btn.hasAttribute('data-edit')) {
-      if (!canEdit()) return notify('No permission','warn');
       const rows = load('cogs', []); const r = rows.find(x=>x.id===id); if (!r) return;
-      openModal('m-cogs');
-      $('#cogs-id').value=id;
-      $('#cogs-date').value=r.date;
-      $('#cogs-grossIncome').value=r.grossIncome;
-      $('#cogs-produceCost').value=r.produceCost;
-      $('#cogs-itemCost').value=r.itemCost;
-      $('#cogs-freight').value=r.freight;
-      $('#cogs-delivery').value=r.delivery;
-      $('#cogs-other').value=r.other;
+      if (typeof openModal === 'function' && document.getElementById('m-cogs')) {
+        openModal('m-cogs');
+        document.getElementById('cogs-id').value=id;
+        document.getElementById('cogs-date').value=r.date;
+        document.getElementById('cogs-grossIncome').value=r.grossIncome;
+        document.getElementById('cogs-produceCost').value=r.produceCost;
+        document.getElementById('cogs-itemCost').value=r.itemCost;
+        document.getElementById('cogs-freight').value=r.freight;
+        document.getElementById('cogs-delivery').value=r.delivery;
+        document.getElementById('cogs-other').value=r.other;
+      } else {
+        const gross = parseFloat(prompt('Gross Income:', r.grossIncome) || String(r.grossIncome||0));
+        r.grossIncome = isNaN(gross) ? r.grossIncome : gross;
+        save('cogs', rows); renderApp();
+      }
     } else {
-      if (!canDelete()) return notify('No permission','warn');
       let rows = load('cogs', []).filter(x=>x.id!==id);
       save('cogs', rows); notify('Deleted'); renderApp();
     }
   });
 }
 
-// ---------- Tasks (DnD any lane, CRUD with roles) ----------
+// ---------- Tasks ----------
 function viewTasks(){
   const items = load('tasks', []);
   const lane = (key, label, color)=>`
@@ -1412,7 +1394,7 @@ function viewTasks(){
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <h3 style="margin:0;color:${color}">${label}</h3>
-          ${key==='todo' && canAdd()? `<button class="btn" id="addTask"><i class="ri-add-line"></i> Add Task</button>`:''}
+          ${key==='todo' && canCreate()? `<button class="btn" id="addTask"><i class="ri-add-line"></i> Add Task</button>`:''}
         </div>
         <div class="grid lane-grid" id="lane-${key}">
           ${items.filter(t=>t.status===key).map(t=>`
@@ -1420,8 +1402,10 @@ function viewTasks(){
               <div class="card-body" style="display:flex;justify-content:space-between;align-items:center">
                 <div>${t.title}</div>
                 <div>
-                  ${canEdit()? `<button class="btn ghost" data-edit="${t.id}"><i class="ri-edit-line"></i></button>`:''}
-                  ${canDelete()? `<button class="btn danger" data-del="${t.id}"><i class="ri-delete-bin-6-line"></i></button>`:''}
+                  ${canCreate() ? `
+                    <button class="btn ghost" data-edit="${t.id}"><i class="ri-edit-line"></i></button>
+                    <button class="btn danger" data-del="${t.id}"><i class="ri-delete-bin-6-line"></i></button>` : ''
+                  }
                 </div>
               </div>
             </div>`).join('')}
@@ -1443,24 +1427,27 @@ function wireTasks(){
   if (!root) return;
 
   document.getElementById('addTask')?.addEventListener('click', ()=>{
-    if (!canAdd()) return notify('No permission','warn');
-    openModal('m-task');
-    $('#task-id').value='';
-    $('#task-title').value='';
-    $('#task-status').value='todo';
+    if (typeof openModal === 'function' && document.getElementById('m-task')) {
+      openModal('m-task'); return;
+    }
+    const title = prompt('Task title?'); if (!title) return;
+    const items = load('tasks', []);
+    items.push({ id:'t_'+Date.now(), title, status:'todo' });
+    save('tasks', items); renderApp();
   });
 
   document.getElementById('save-task')?.addEventListener('click', ()=>{
-    if (!canAdd()) return notify('No permission','warn');
     const items = load('tasks', []);
-    const id = $('#task-id').value || ('t_'+Date.now());
-    const obj = { id, title: $('#task-title').value.trim(), status: $('#task-status').value };
-    if (!obj.title) return notify('Title required','warn');
+    const id = document.getElementById('task-id').value || ('t_'+Date.now());
+    const obj = { 
+      id, 
+      title: document.getElementById('task-title').value.trim(), 
+      status: document.getElementById('task-status').value 
+    };
     const i = items.findIndex(x=>x.id===id);
-    if (i>=0) { if (!canEdit()) return notify('No permission','warn'); items[i]=obj; }
-    else items.push(obj);
+    if (i>=0) items[i]=obj; else items.push(obj);
     save('tasks',items);
-    closeModal('m-task');
+    if (typeof closeModal === 'function') closeModal('m-task');
     notify('Saved'); renderApp();
   });
 
@@ -1470,14 +1457,17 @@ function wireTasks(){
     const items = load('tasks', []);
 
     if (btn.hasAttribute('data-edit')) {
-      if (!canEdit()) return notify('No permission','warn');
       const t = items.find(x=>x.id===id); if (!t) return;
-      openModal('m-task');
-      $('#task-id').value = t.id;
-      $('#task-title').value = t.title;
-      $('#task-status').value = t.status;
+      if (typeof openModal === 'function' && document.getElementById('m-task')) {
+        openModal('m-task');
+        document.getElementById('task-id').value = t.id;
+        document.getElementById('task-title').value = t.title;
+        document.getElementById('task-status').value = t.status;
+      } else {
+        const title = prompt('Title:', t.title); if (!title) return;
+        t.title = title; save('tasks', items); renderApp();
+      }
     } else {
-      if (!canDelete()) return notify('No permission','warn');
       const next = items.filter(x=>x.id!==id);
       save('tasks', next); notify('Deleted'); renderApp();
     }
@@ -1488,7 +1478,11 @@ function wireTasks(){
 
 function setupDnD(){
   const lanes = ['todo','inprogress','done'];
-  const allow = { 'todo':new Set(lanes), 'inprogress':new Set(lanes), 'done':new Set(lanes) };
+  const allow = {
+    'todo':       new Set(['inprogress','done']),
+    'inprogress': new Set(['todo','done']),
+    'done':       new Set(['todo','inprogress'])
+  };
 
   document.querySelectorAll('[data-task]').forEach(card=>{
     card.ondragstart = (e)=> {
@@ -1514,7 +1508,6 @@ function setupDnD(){
     const leave = ()=> parentCard?.classList.remove('drop');
     const drop = (e)=>{
       e.preventDefault();
-      if (!canAdd()) return notify('No permission','warn'); // move requires write
       parentCard?.classList.remove('drop');
       const id = e.dataTransfer.getData('text/plain');
       const items = load('tasks', []);
@@ -1533,21 +1526,23 @@ function setupDnD(){
   });
 }
 
-// Hook Part D into render
+// Hook Part D after render
 (function(){
-  const _old = window.renderApp;
-  if (!_old || _old.__wrapD) return;
+  const _oldRenderApp = window.renderApp;
+  if (!_oldRenderApp || _oldRenderApp.__wrappedByPartD) return;
+
   window.renderApp = function(){
-    _old.call(this);
+    _oldRenderApp.call(this);
+
     if (window.currentRoute === 'inventory')  wireInventory?.();
     if (window.currentRoute === 'products')   wireProducts?.();
     if (window.currentRoute === 'cogs')       wireCOGS?.();
     if (window.currentRoute === 'tasks')      wireTasks?.();
   };
-  window.renderApp.__wrapD = true;
+  window.renderApp.__wrappedByPartD = true;
 })();
 
-// Part E — Settings (Cloud/Theme + Users CRUD with roles), Contact (send email), Static pages, Modals
+// Part E — Settings, Users, Contact, Static pages, Modals
 // ===================== Part E =====================
 
 // ---------- Modal helpers ----------
@@ -1602,17 +1597,16 @@ Object.assign(window.pageContent, {
       <iframe src="guide.html" style="width:100%;height:calc(100vh - 220px);border:none"></iframe>
     </div>`,
   contact:`<h3>Contact</h3>
-    <p>Send an email directly from here. If EmailJS is available, it will send via your template; otherwise it will open your email app.</p>
+    <p>Send us a message and we’ll reply by email.</p>
     <div class="grid cols-2">
-      <input id="ct-to"    class="input" type="email" placeholder="Recipient email (To)" value="${load('contact_to','you@example.com')}"/>
-      <input id="ct-email" class="input" type="email" placeholder="Your email (reply-to)" value="${session?.email||''}"/>
+      <input id="ct-name" class="input" placeholder="Your name" />
+      <input id="ct-email" class="input" type="email" placeholder="Your email" />
     </div>
-    <input id="ct-name" class="input" placeholder="Your name" value="${session?.name||''}"/>
     <textarea id="ct-msg" class="input" rows="5" placeholder="Message"></textarea>
     <div style="display:flex;justify-content:flex-end;margin-top:10px">
       <button id="ct-send" class="btn"><i class="ri-send-plane-line"></i> Send</button>
     </div>
-    <p style="color:var(--muted);font-size:12px;margin-top:6px">Settings no longer include email config; specify the recipient here.</p>`
+    <p style="color:var(--muted);font-size:12px;margin-top:6px">This uses EmailJS if configured in Settings → Email. If not configured, your email app will open as fallback.</p>`
 });
 
 function viewPage(key){
@@ -1623,33 +1617,38 @@ function wireContact(){
   const btn = document.getElementById('ct-send');
   if (!btn) return;
   btn.onclick = async ()=>{
-    const to   = (document.getElementById('ct-to')?.value || '').trim();
     const name = (document.getElementById('ct-name')?.value || '').trim();
-    const email= (document.getElementById('ct-email')?.value || '').trim();
-    const msg  = (document.getElementById('ct-msg')?.value || '').trim();
-    if (!to || !name || !email || !msg){ notify('Please fill all fields','warn'); return; }
-    save('contact_to', to);
+    const email = (document.getElementById('ct-email')?.value || '').trim();
+    const msg = (document.getElementById('ct-msg')?.value || '').trim();
+    if (!name || !email || !msg){ notify('Please fill all fields','warn'); return; }
 
+    const cfg = load('emailjs_cfg', null);
     const hasEmailJS = !!(window.emailjs && window.emailjs.send);
-    if (hasEmailJS){
+    if (cfg && hasEmailJS){
       try{
         if (!window.__emailjs_inited){
-          // If you want to use EmailJS, put your PUBLIC KEY here or pre-init in index.html
-          // window.emailjs.init('YOUR_PUBLIC_KEY');
+          window.emailjs.init(cfg.publicKey);
           window.__emailjs_inited = true;
         }
-        await window.emailjs.send('service_id', 'template_id', {
-          from_name: name, reply_to: email, message: msg, to_email: to
+        await window.emailjs.send(cfg.serviceId, cfg.templateId, {
+          from_name: name,
+          reply_to: email,
+          message: msg,
+          to_email: cfg.toEmail || ''
         });
         notify('Message sent!', 'ok');
-        $('#ct-msg').value='';
+        document.getElementById('ct-name').value='';
+        document.getElementById('ct-email').value='';
+        document.getElementById('ct-msg').value='';
       }catch(e){
-        notify('Failed via EmailJS. Opening your email app…','warn');
-        window.location.href = `mailto:${encodeURIComponent(to)}`
+        notify('Failed to send via EmailJS. Opening your email app…','warn');
+        window.location.href = `mailto:${encodeURIComponent(cfg.toEmail||'')}`
           + `?subject=${encodeURIComponent('Contact from Inventory App')}`
           + `&body=${encodeURIComponent(`From: ${name} <${email}>\n\n${msg}`)}`;
       }
     } else {
+      const to = (cfg && cfg.toEmail) ? cfg.toEmail : 'you@example.com';
+      notify('Opening your email app…','ok');
       window.location.href = `mailto:${encodeURIComponent(to)}`
         + `?subject=${encodeURIComponent('Contact from Inventory App')}`
         + `&body=${encodeURIComponent(`From: ${name} <${email}>\n\n${msg}`)}`;
@@ -1657,11 +1656,12 @@ function wireContact(){
   };
 }
 
-// ---------- Settings (Cloud + Theme + Users) ----------
+// ---------- Settings (Cloud + Theme + EmailJS + Users) ----------
 function viewSettings(){
   const users = load('users', []);
   const theme = (typeof getTheme === 'function') ? getTheme() : {mode:'aqua', size:'medium'};
   const cloudOn = (typeof cloud?.isOn === 'function') ? cloud.isOn() : false;
+  const emailCfg = load('emailjs_cfg', { serviceId:'', templateId:'', publicKey:'', toEmail:'' });
 
   return `
     <div class="grid">
@@ -1709,12 +1709,32 @@ function viewSettings(){
         </div>
       </div>
 
+      <!-- EmailJS -->
+      <div class="card">
+        <div class="card-body">
+          <h3 style="margin-top:0">Email (Contact)</h3>
+          <p style="color:var(--muted)">Configure EmailJS so the Contact page can send you messages.</p>
+          <div class="grid cols-2">
+            <input id="ej-service"  class="input" placeholder="Service ID"  value="${emailCfg.serviceId||''}"/>
+            <input id="ej-template" class="input" placeholder="Template ID" value="${emailCfg.templateId||''}"/>
+            <input id="ej-public"   class="input" placeholder="Public Key"  value="${emailCfg.publicKey||''}"/>
+            <input id="ej-to"       class="input" placeholder="To Email (your inbox)" value="${emailCfg.toEmail||''}"/>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:10px">
+            <button class="btn" id="ej-save"><i class="ri-save-3-line"></i> Save Email Settings</button>
+          </div>
+          <p style="color:var(--muted);font-size:12px;margin-top:8px">
+            Tip: Include <code>&lt;script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"&gt;&lt;/script&gt;</code> in <code>index.html</code> to enable EmailJS.
+          </p>
+        </div>
+      </div>
+
       <!-- Users -->
       <div class="card">
         <div class="card-body">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
             <h3 style="margin:0">Users</h3>
-            ${canAdd()? `<button class="btn" id="addUser"><i class="ri-add-line"></i> Add User</button>`:''}
+            ${canManage()? `<button class="btn" id="addUser"><i class="ri-add-line"></i> Add User</button>`:''}
           </div>
           <table class="table" data-section="users">
             <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr></thead>
@@ -1725,8 +1745,10 @@ function viewSettings(){
                   <td>${u.email}</td>
                   <td>${u.role}</td>
                   <td>
-                    ${canEdit()? `<button class="btn ghost" data-edit="${u.email}"><i class="ri-edit-line"></i></button>`:''}
-                    ${canDelete()? `<button class="btn danger" data-del="${u.email}"><i class="ri-delete-bin-6-line"></i></button>`:''}
+                    ${canManage()? `
+                      <button class="btn ghost" data-edit="${u.email}"><i class="ri-edit-line"></i></button>
+                      <button class="btn danger" data-del="${u.email}"><i class="ri-delete-bin-6-line"></i></button>` : ''
+                    }
                   </td>
                 </tr>`).join('')}
             </tbody>
@@ -1746,29 +1768,18 @@ function viewSettings(){
   `;
 }
 
-// Role option limits when non-admin edits
-function allowedRoleOptions(){
-  const r = role();
-  if (r === 'admin') return ROLES;
-  if (r === 'manager') return ['user','associate','manager']; // no admin escalation
-  if (r === 'associate') return ['user','associate'];
-  return ['user']; // viewer cannot change roles, only view
-}
-
 function wireSettings(){
-  // Theme instant apply
   const mode = document.getElementById('theme-mode');
   const size = document.getElementById('theme-size');
   const applyThemeNow = ()=>{
     const t = { mode: mode.value, size: size.value };
     save('_theme2', t);
-    applyTheme();
+    if (typeof applyTheme === 'function') applyTheme();
     renderApp();
   };
   mode?.addEventListener('change', applyThemeNow);
   size?.addEventListener('change', applyThemeNow);
 
-  // Cloud controls
   const toggle = document.getElementById('cloud-toggle');
   const syncNow = document.getElementById('cloud-sync-now');
 
@@ -1804,50 +1815,41 @@ function wireSettings(){
     }
   });
 
-  // Users section wiring
+  const ejSave = document.getElementById('ej-save');
+  ejSave?.addEventListener('click', ()=>{
+    const cfg = {
+      serviceId: (document.getElementById('ej-service')?.value||'').trim(),
+      templateId:(document.getElementById('ej-template')?.value||'').trim(),
+      publicKey: (document.getElementById('ej-public')?.value||'').trim(),
+      toEmail:   (document.getElementById('ej-to')?.value||'').trim(),
+    };
+    save('emailjs_cfg', cfg);
+    notify('Email settings saved','ok');
+  });
+
   wireUsers();
 }
 
 function wireUsers(){
+  if (!canManage()) return;
   const addBtn = document.getElementById('addUser');
   const table = document.querySelector('[data-section="users"]');
-
-  addBtn?.addEventListener('click', ()=>{
-    if (!canAdd()) return notify('No permission','warn');
-    openModal('m-user');
-    $('#user-name').value='';
-    $('#user-email').value='';
-    $('#user-username').value='';
-    $('#user-img').value='';
-    const sel = $('#user-role');
-    sel.innerHTML = allowedRoleOptions().map(r=>`<option value="${r}">${r[0].toUpperCase()+r.slice(1)}</option>`).join('');
-    sel.value = allowedRoleOptions()[0];
-  });
+  addBtn?.addEventListener('click', ()=> openModal('m-user'));
 
   document.getElementById('save-user')?.addEventListener('click', ()=>{
-    if (!canAdd()) return notify('No permission','warn');
     const users = load('users', []);
-    const email = ($('#user-email')?.value || '').trim().toLowerCase();
+    const email = (document.getElementById('user-email')?.value || '').trim().toLowerCase();
     if (!email) return notify('Email required','warn');
-    const allowed = allowedRoleOptions();
-    const chosenRole = ($('#user-role')?.value || 'user');
-    if (!allowed.includes(chosenRole)) return notify('Role not allowed','warn');
-
     const obj = {
-      name: ($('#user-name')?.value || email.split('@')[0]).trim(),
+      name: (document.getElementById('user-name')?.value || email.split('@')[0]).trim(),
       email,
-      username: ($('#user-username')?.value || email.split('@')[0]).trim(),
-      role: chosenRole,
-      img: ($('#user-img')?.value || '').trim(),
+      username: (document.getElementById('user-username')?.value || email.split('@')[0]).trim(),
+      role: (document.getElementById('user-role')?.value || 'user'),
+      img: (document.getElementById('user-img')?.value || '').trim(),
       contact:'', password:''
     };
     const i = users.findIndex(x=>x.email.toLowerCase()===email);
-    if (i>=0) {
-      if (!canEdit()) return notify('No permission','warn');
-      users[i]=obj;
-    } else {
-      users.push(obj);
-    }
+    if (i>=0) users[i]=obj; else users.push(obj);
     save('users', users);
     closeModal('m-user'); notify('Saved'); renderApp();
   });
@@ -1857,18 +1859,14 @@ function wireUsers(){
     const email = btn.getAttribute('data-edit') || btn.getAttribute('data-del'); if (!email) return;
 
     if (btn.hasAttribute('data-edit')) {
-      if (!canEdit()) return notify('No permission','warn');
       const users = load('users', []); const u = users.find(x=>x.email===email); if (!u) return;
       openModal('m-user');
-      $('#user-name').value=u.name;
-      $('#user-email').value=u.email;
-      $('#user-username').value=u.username;
-      $('#user-img').value=u.img||'';
-      const sel = $('#user-role');
-      sel.innerHTML = allowedRoleOptions().map(r=>`<option value="${r}">${r[0].toUpperCase()+r.slice(1)}</option>`).join('');
-      sel.value = allowedRoleOptions().includes(u.role) ? u.role : 'user';
+      document.getElementById('user-name').value=u.name;
+      document.getElementById('user-email').value=u.email;
+      document.getElementById('user-username').value=u.username;
+      document.getElementById('user-role').value=u.role;
+      document.getElementById('user-img').value=u.img||'';
     } else {
-      if (!canDelete()) return notify('No permission','warn');
       let users = load('users', []).filter(x=>x.email!==email);
       save('users', users); notify('Deleted'); renderApp();
     }
@@ -1877,6 +1875,7 @@ function wireUsers(){
 
 // ---------- ALL Modals ----------
 function postModal(){
+  if (!canCreate()) return '';
   return `
   <div class="modal-backdrop" id="mb-post"></div>
   <div class="modal" id="m-post">
@@ -1894,6 +1893,7 @@ function postModal(){
 }
 
 function invModal(){
+  if (!canCreate()) return '';
   return `
   <div class="modal-backdrop" id="mb-inv"></div>
   <div class="modal" id="m-inv">
@@ -1917,6 +1917,7 @@ function invModal(){
 }
 
 function prodModal(){
+  if (!canCreate()) return '';
   return `
   <div class="modal-backdrop" id="mb-prod"></div>
   <div class="modal" id="m-prod">
@@ -1958,6 +1959,7 @@ function prodCardModal(){
 }
 
 function cogsModal(){
+  if (!canCreate()) return '';
   return `
   <div class="modal-backdrop" id="mb-cogs"></div>
   <div class="modal" id="m-cogs">
@@ -1979,6 +1981,7 @@ function cogsModal(){
 }
 
 function taskModal(){
+  if (!canCreate()) return '';
   return `
   <div class="modal-backdrop" id="mb-task"></div>
   <div class="modal" id="m-task">
@@ -1999,6 +2002,7 @@ function taskModal(){
 }
 
 function userModal(){
+  if (!canManage()) return '';
   return `
   <div class="modal-backdrop" id="mb-user"></div>
   <div class="modal" id="m-user">
@@ -2008,7 +2012,11 @@ function userModal(){
         <input id="user-name" class="input" placeholder="Name" />
         <input id="user-email" class="input" type="email" placeholder="Email" />
         <input id="user-username" class="input" placeholder="Username" />
-        <select id="user-role"></select>
+        <select id="user-role">
+          <option value="user">User</option>
+          <option value="manager">Manager</option>
+          <option value="admin">Admin</option>
+        </select>
         <input id="user-img" class="input" placeholder="Image URL (optional)" />
       </div>
       <div class="foot"><button class="btn" id="save-user">Save</button></div>
@@ -2027,29 +2035,36 @@ function imgPreviewModal(){
   </div>`;
 }
 
-// Hook Settings & Contact into render
+// Hook Part E after render
 (function(){
-  const _old = window.renderApp;
-  if (!_old || _old.__wrapE) return;
+  const _oldRenderApp = window.renderApp;
+  if (!_oldRenderApp || _oldRenderApp.__wrappedByPartE) return;
+
   window.renderApp = function(){
-    _old.call(this);
-    if (window.currentRoute === 'settings') wireSettings();
-    if (window.currentRoute === 'contact')  wireContact();
+    _oldRenderApp.call(this);
+
+    if (window.currentRoute === 'settings') {
+      wireSettings();
+    }
+    if (window.currentRoute === 'contact') {
+      wireContact();
+    }
     enableMobileImagePreview?.();
   };
-  window.renderApp.__wrapE = true;
+  window.renderApp.__wrappedByPartE = true;
 })();
 
-// Part F — Search utilities + boot + tiny debug API
+// Part F — Search utilities, Service Worker, Auth, Boot
 // ===================== Part F =====================
 
+// ---------- Search index utilities ----------
 if (typeof window.buildSearchIndex !== 'function') {
   window.buildSearchIndex = function buildSearchIndex(){
-    const posts = load('posts', []);
-    const inv   = load('inventory', []);
-    const prods = load('products', []);
-    const cogs  = load('cogs', []);
-    const users = load('users', []);
+    const posts = (typeof load==='function') ? load('posts', []) : [];
+    const inv   = load?.('inventory', []) || [];
+    const prods = load?.('products', []) || [];
+    const cogs  = load?.('cogs', []) || [];
+    const users = load?.('users', []) || [];
 
     const pages = [
       { id:'policy',  label:'Policy',      section:'Pages', route:'policy'  },
@@ -2060,11 +2075,26 @@ if (typeof window.buildSearchIndex !== 'function') {
     ];
 
     const ix = [];
-    posts.forEach(p => ix.push({ id:p.id, label:p.title, section:'Posts', route:'dashboard', text:`${p.title} ${p.body}` }));
-    inv.forEach(i => ix.push({ id:i.id, label:i.name, section:'Inventory', route:'inventory', text:`${i.name} ${i.code} ${i.type}` }));
-    prods.forEach(p => ix.push({ id:p.id, label:p.name, section:'Products', route:'products', text:`${p.name} ${p.barcode} ${p.type} ${p.ingredients}` }));
-    cogs.forEach(r => ix.push({ id:r.id, label:r.date, section:'COGS', route:'cogs', text:`${r.date} ${r.grossIncome} ${r.produceCost} ${r.itemCost} ${r.freight} ${r.delivery} ${r.other}` }));
-    users.forEach(u => ix.push({ id:u.email, label:u.name, section:'Users', route:'settings', text:`${u.name} ${u.email} ${u.role}` }));
+    posts.forEach(p => ix.push({
+      id:p.id, label:p.title, section:'Posts', route:'dashboard',
+      text:`${p.title} ${p.body}`
+    }));
+    inv.forEach(i => ix.push({
+      id:i.id, label:i.name, section:'Inventory', route:'inventory',
+      text:`${i.name} ${i.code} ${i.type}`
+    }));
+    prods.forEach(p => ix.push({
+      id:p.id, label:p.name, section:'Products', route:'products',
+      text:`${p.name} ${p.barcode} ${p.type} ${p.ingredients}`
+    }));
+    cogs.forEach(r => ix.push({
+      id:r.id, label:r.date, section:'COGS', route:'cogs',
+      text:`${r.date} ${r.grossIncome} ${r.produceCost} ${r.itemCost} ${r.freight} ${r.delivery} ${r.other}`
+    }));
+    users.forEach(u => ix.push({
+      id:u.email, label:u.name, section:'Users', route:'settings',
+      text:`${u.name} ${u.email} ${u.role}`
+    }));
     pages.forEach(p => ix.push(p));
     return ix;
   };
@@ -2092,42 +2122,126 @@ if (typeof window.scrollToRow !== 'function') {
   };
 }
 
-// Online / offline hints
+// ---------- Online / offline hint ----------
 (function(){
   if (!('addEventListener' in window)) return;
   window.addEventListener('online',  ()=> typeof notify==='function' && notify('Back online','ok'));
   window.addEventListener('offline', ()=> typeof notify==='function' && notify('You are offline','warn'));
 })();
 
-// Optional Service Worker (register if file exists at /public/service-worker.js)
+// ---------- Service Worker (optional) ----------
 (function(){
   if (!('serviceWorker' in navigator)) return;
-  const swUrl = 'service-worker.js';
-  const tryRegister = () => navigator.serviceWorker.register(swUrl).catch(err => console.warn('[sw] registration failed:', err));
+  const swUrl = 'service-worker.js'; // relative to /public root
+
+  const tryRegister = () => navigator.serviceWorker
+    .register(swUrl)
+    .catch(err => console.warn('[sw] registration failed:', err));
+
   fetch(swUrl, { method: 'HEAD' })
-    .then(r => { if (!r.ok) return; if ('requestIdleCallback' in window) requestIdleCallback(tryRegister); else setTimeout(tryRegister, 500); })
+    .then(r => {
+      if (!r.ok) return;
+      if ('requestIdleCallback' in window) requestIdleCallback(tryRegister);
+      else setTimeout(tryRegister, 500);
+    })
     .catch(() => {});
 })();
 
-// First paint bootstrapping
+// ---------- Auth state + session builder ----------
+async function ensureSessionAndRender(user) {
+  try {
+    applyTheme();
+
+    if (!user) {
+      session = null;
+      save('session', null);
+      if (idleTimer) clearTimeout(idleTimer);
+      renderLogin();
+      return;
+    }
+
+    const email = (user.email || '').toLowerCase();
+    let users = load('users', []);
+    let prof = users.find(u => (u.email || '').toLowerCase() === email);
+
+    if (!prof) {
+      const role = SUPER_ADMINS.includes(email) ? 'admin' : 'user';
+      prof = {
+        name: role === 'admin' ? 'Admin' : 'User',
+        username: email.split('@')[0],
+        email,
+        contact: '',
+        role,
+        password: '',
+        img: ''
+      };
+      users.push(prof);
+      save('users', users);
+    } else if (SUPER_ADMINS.includes(email) && prof.role !== 'admin') {
+      prof.role = 'admin';
+      save('users', users);
+    }
+
+    session = { ...prof };
+    save('session', session);
+
+    try {
+      if (cloud?.isOn?.()) {
+        try { await firebase.database().goOnline(); } catch {}
+        try { await cloud.pullAllOnce(); } catch {}
+        try { cloud.subscribeAll(); } catch {}
+      }
+    } catch {}
+
+    resetIdleTimer();
+    currentRoute = load('_route', 'home');
+
+    try {
+      renderApp();
+    } catch (err) {
+      console.error('[renderApp] crashed:', err);
+      notify(err?.message || 'Render error', 'danger');
+      showRescue(err);
+    }
+  } catch (outer) {
+    console.error('[ensureSessionAndRender] outer crash:', outer);
+    notify(outer?.message || 'Render failed', 'danger');
+    showRescue(outer);
+  }
+}
+
+auth.onAuthStateChanged(async (user) => {
+  console.log('[auth] onAuthStateChanged:', !!user, user?.email || '');
+  try {
+    await ensureSessionAndRender(user);
+  } catch (err) {
+    console.error('[auth] ensureSessionAndRender crashed:', err);
+    notify(err?.message || 'Render failed', 'danger');
+    showRescue(err);
+  }
+});
+
+// ---------- First paint bootstrapping ----------
 (function boot(){
   try {
-    if (typeof renderApp === 'function' && window.session) renderApp();
-    else if (typeof renderLogin === 'function') renderLogin();
+    if (typeof renderApp === 'function' && session) {
+      renderApp();
+    } else if (typeof renderLogin === 'function') {
+      renderLogin();
+    }
   } catch(e){
     if (typeof notify === 'function') notify(e.message || 'Startup error','danger');
     if (typeof renderLogin === 'function') renderLogin();
   }
 })();
 
-// Tiny debug API
+// ---------- Expose tiny debug API ----------
 window._inventory = Object.assign(window._inventory || {}, {
   go: (typeof go === 'function' ? go : undefined),
   load: (typeof load === 'function' ? load : undefined),
   save: (typeof save === 'function' ? save : undefined),
   cloud: (typeof cloud !== 'undefined' ? cloud : undefined),
   theme: (typeof getTheme === 'function' ? getTheme() : undefined),
-  renderApp: (typeof renderApp === 'function' ? renderApp : undefined),
-  role: ()=>role(),
-  perms: { canAdd, canEdit, canDelete }
+  renderApp: (typeof renderApp === 'function' ? renderApp : undefined)
 });
+
